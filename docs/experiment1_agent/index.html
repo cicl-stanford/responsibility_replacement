@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title> Psychology Experiment </title>
+        
+        <link rel="stylesheet" href='css/jspsych.css' />
+        <link rel="stylesheet" href='css/jquery-ui-slider-pips-edit.css' />
+        <link rel="stylesheet" href='css/jquery-ui-edit.css' />
+       
+        <script src='js/jquery.min.js'></script>
+        <script src='js/jquery-ui.min.js'></script>
+        <script src="js/jquery-ui-slider-pips.js"></script>
+        <script src='https://proliferate.alps.science/static/js/proliferate.js'></script>
+
+        <script src='js/jspsych.js'></script>
+        <script src='js/jspsych-instructions.js'></script>
+        <script src='js/jspsych-button.js'></script>
+        <script src='js/jspsych-slider.js'></script>
+        <script src='js/jspsych-multi-choice.js'></script>
+        <script src='js/jspsych-form.js'></script>
+
+        <script src='js/consent.js'></script>
+        <script src='js/feedback-demographics.js'></script>
+        <script src='js/craftspeople.js'></script>
+        <script src='js/utils.js'></script>
+        <script src='js/trial_info.js'></script>
+    </head>
+    </body></body>
+    <script>
+        // create instructions
+        var example_pages = [];
+        for (var i = 1; i <= 5; i++) {
+            page = '<img src="' + example_trial_info[0]['slide'+i] + '"></img><br>' +
+                '<p class="image-prompt">' + example_trial_info[0]['prompt'+i] +
+                '</p>';
+            example_pages.push(page);
+        }
+        for (var i = 3; i <= 5; i+=2) {
+            page = '<img src="' + example_trial_info[1]['slide'+i] + '"></img><br>' +
+                '<p class="image-prompt">' + example_trial_info[1]['prompt'+i] +
+                '</p>';
+            example_pages.push(page);
+
+        }
+        var last_page = '<div id="jspsych-html-slider-response-wrapper"><div id="jspsych-html-slider-response-stimulus"><img src="';
+        last_page += 'trials/trialE2-6.png';
+        last_page += '"></div><p>How responsible was each person (outlined in red) here for the success?</p><div class="jspsych-html-slider-response-container" style="position:relative; margin: 1em auto 2em auto; width:500px;"><div style="margin: 1em 0;"><div style="width: 12%; float: left; text-align: center;"><img src="js/c.png" style="width:20px;">  </div><div style="width: 80%; float: right;"> <div style="width: 100%;" class="jspsych-html-slider-response-response ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all" id="jspsych-html-slider-response-response-c"><span class="ui-slider-handle ui-state-default ui-corner-all" tabindex="0" style="left: 0%; display: none;"></span></div><div style="display: inline-block; position: relative; left:-50%; text-align: center; width: 100%;"><span style="text-align: center; font-size: 80%;"> not at all </span></div><div style="display: inline-block; position: absolute; left:50%; text-align: center; width: 100%;"><span style="text-align: center; font-size: 80%;"> very much </span></div></div><div style="clear:both"></div></div><div style="margin: 1em 0;"><div style="width: 12%; float: left; text-align: center;"><img src="js/b.png" style="width:20px;">  </div><div style="width: 80%; float: right;"> <div style="width: 100%;" class="jspsych-html-slider-response-response ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all" id="jspsych-html-slider-response-response-b"><span class="ui-slider-handle ui-state-default ui-corner-all" tabindex="0" style="left: 0%; display: none;"></span></div><div style="display: inline-block; position: relative; left:-50%; text-align: center; width: 100%;"><span style="text-align: center; font-size: 80%;"> not at all </span></div><div style="display: inline-block; position: absolute; left:50%; text-align: center; width: 100%;"><span style="text-align: center; font-size: 80%;"> very much </span></div></div><div style="clear:both"></div></div><div style="margin: 1em 0;"><div style="width: 12%; float: left; text-align: center;"><img src="js/t.png" style="width:20px;">  </div><div style="width: 80%; float: right;"> <div style="width: 100%;" class="jspsych-html-slider-response-response ui-slider ui-slider-horizontal ui-widget ui-widget-content ui-corner-all" id="jspsych-html-slider-response-response-t"><span class="ui-slider-handle ui-state-default ui-corner-all" tabindex="0" style="left: 0%; display: none;"></span></div><div style="display: inline-block; position: relative; left:-50%; text-align: center; width: 100%;"><span style="text-align: center; font-size: 80%;"> not at all </span></div><div style="display: inline-block; position: absolute; left:50%; text-align: center; width: 100%;"><span style="text-align: center; font-size: 80%;"> very much </span></div></div><div style="clear:both"></div></div></div></div>'; 
+        example_pages.push(last_page);
+
+        var instructions = {
+            timeline_variables: example_trial_info,
+            type: 'instructions',
+            pages: example_pages,
+            on_load: set_slider(),
+            show_clickable_nav: true,
+            on_start: function() { jsPsych.setProgressBar(0.02); },
+            on_finish: function() { jsPsych.setProgressBar(0.1); }
+        };
+        
+        // display comprehension questions
+        var options_tf = ['True', 'False'];
+        var comprehension_qs = {
+            type: 'survey-multi-choice',
+            questions: [
+                {
+                    prompt: 'Each ship requires exactly one carpenter, one' +
+                            ' blacksmith, and one tailor to build.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'All villages have the same number of carpenters,' +
+                            ' blacksmiths, and tailors.',
+                    options: options_tf,
+                    horizontal: true
+                },
+                {
+                    prompt: 'Craftspeople are always available to work on a' +
+                            ' ship if asked.',
+                    options: options_tf,
+                    horizontal: true
+                },
+            ],
+            preamble: 'Please answer a few comprehension questions so we know' +
+                ' that you understand the setup.',
+            on_finish: function(data){
+                // jspsych records responses as json strings
+                data.correct = (data.responses == '{"Q0":"True","Q1":"False","Q2":"False"}');
+            }
+        }
+        
+        var fail_comprehension = {
+            timeline: [{
+                type: 'html-button-response',
+                stimulus: 'Unfortunately, you missed some of the comprehension ' +
+                    'questions.</p> <p> Please review the instructions again.',
+                choices: ['Review'],
+            }],
+            conditional_function: function(){
+                var data = jsPsych.data.get().last(1).values()[0];
+                return !(data.correct);
+            }
+        }
+        
+        var loop_node = {
+            timeline: [
+                instructions,
+                comprehension_qs,
+                fail_comprehension
+            ],
+            loop_function: function(data){
+                var data = jsPsych.data.get().last(1).values()[0];
+                return !(data.correct);
+            }
+        }
+        
+        // add transition to start
+        var trials_start = {
+            type: 'html-button-response',
+            stimulus: '<div style="width:60%; min-width:300px; min-height:300px;' +
+                ' margin:auto; display:flex; align-items:flex-end;"> <p>' +
+                start_prompt + "<br> <br> Please do not refresh the page." +
+                " Click the start button whenever you're ready. <br> </div>",
+            choices: ['Start'],
+            on_finish: function() { jsPsych.setProgressBar(0.14); },
+        };
+
+        var num_trials = full_trial_info.length + condensed_trial_info.length;
+        
+        var full_trials = {
+            timeline_variables: full_trial_info,
+            timeline: [
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        var html = '<img src="' + jsPsych.timelineVariable('slide3',
+                            true) + '"></img><p class="image-prompt">' +
+                            jsPsych.timelineVariable('prompt3', true) + '</p>';
+                        return html;
+                    },
+                },
+                {
+                    type: 'html-button-response',
+                    stimulus: function() {
+                        var html = '<img src="' + jsPsych.timelineVariable('slide5',
+                            true) + '"></img><p class="image-prompt">' +
+                            jsPsych.timelineVariable('prompt5', true) + '</p>';
+                        return html;
+                    },
+                },
+                {
+                    type: 'craftspeople',
+                    slide: jsPsych.timelineVariable('slide6'),
+                    prompt: jsPsych.timelineVariable('prompt6'),
+                    data: { trial: jsPsych.timelineVariable('trial') }
+                }
+            ],
+            choices: ['Continue'],
+            on_finish: function() {
+                var prog = jsPsych.getProgressBarCompleted();
+                jsPsych.setProgressBar(prog + 0.03);
+            }
+        };
+
+        var trials_start2 = {
+            type: 'html-button-response',
+            stimulus: '<div style="width:60%; min-width:300px; min-height:300px;' +
+                ' margin:auto; display:flex; align-items:flex-end;">' +
+                ' Great! To speed up the experiment, for the rest of the' +
+                " villages, you'll only see the final scene showing all the" +
+                " craftspeople, with the three who were available to help build" +
+                ' the ship outlined in red. Remember <br> <br>' +
+                ' Click the button below to continue. <br> <br> </div>',
+            choices: ['Continue'],
+            on_finish: function() {
+                var prog = jsPsych.getProgressBarCompleted();
+                jsPsych.setProgressBar(prog + 0.04);
+            }
+        };
+
+        var condensed_trials = {
+            timeline_variables: condensed_trial_info,
+            timeline: [
+                {
+                    type: 'craftspeople',
+                    slide: jsPsych.timelineVariable('slide6'),
+                    prompt: jsPsych.timelineVariable('prompt6'),
+                    data: { trial: jsPsych.timelineVariable('trial') }
+                }
+            ],
+            sample: {
+                type: 'custom',
+                fn: order_condensed,
+            },
+            on_finish: function() {
+                var prog = jsPsych.getProgressBarCompleted();
+                jsPsych.setProgressBar(prog + 0.03);
+            },
+        };
+
+        var timeline = [];
+        timeline.push(consent);
+        timeline.push(loop_node);
+        timeline.push(trials_start);
+        timeline.push(full_trials);
+        timeline.push(trials_start2);
+        timeline.push(condensed_trials);
+        timeline.push(feedback_demographics);
+
+        jsPsych.init({
+            timeline: timeline,
+            preload_images: all_images,
+            show_progress_bar: true,
+            auto_update_progress_bar: false,
+            on_finish: function() {
+                var data = jsPsych.data.get().filter([
+                    {trial_type: 'html-slider-response'},
+                    {trial_type: 'survey-html-form'},
+                    {trial_type: 'craftspeople'},
+                ]);
+                var values = data.values();
+                
+		        // construct trials data
+                var ppl = ['c', 'b', 't'];
+		        var trials = [];
+		        for (var i = 0; i < num_trials; i++) {
+		            var temp = {};
+                    temp["trial"] = values[i]['trial'];
+                    for (var p = 0; p < ppl.length; p++) {
+                        temp['resp_'+ppl[p]] = parseInt(values[i]['resp_'+ppl[p]]);
+                    }
+                    trials.push(temp);
+                }
+		        
+                // parse demographics and construct participant data
+		        var participant = JSON.parse(values[values.length-1]['responses']);
+                if (typeof participant.ethnicity == "undefined") {
+                    participant.ethnicity = "";
+                }
+                var participant_info = {
+                    "feedback": participant.feedback,
+                    "age": participant.age,
+                    "gender": participant.gender,
+                    "race": participant.race,
+                    "ethnicity": participant.ethnicity,
+                    "time": values[values.length-1]['time_elapsed']
+                };
+
+                proliferate.submit({
+                    "trials": trials,
+                    "participants": participant_info
+                });
+
+                $('#jspsych-content').css('margin-top', 'auto');
+                $('#jspsych-content').html('<div style="margin: auto;"> <p>' +
+                    ' Thank you for participating in this experiment! </p>' +
+                    '<p> Redirecting you back to Prolific... </p>');
+                setTimeout(function(){}, 300);
+            }
+        });
+    </script>
+</html>

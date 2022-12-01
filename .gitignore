@@ -1,0 +1,9 @@
+# R / RStudio files
+.Rhistory
+.Rapp.history
+.Rproj.user/
+.Rproj.user
+.Renviron
+
+# Miscellaneous
+.DS_Store

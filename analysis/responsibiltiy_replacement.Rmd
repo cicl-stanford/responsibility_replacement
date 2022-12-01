@@ -1,0 +1,2177 @@
+---
+title: "If not me, then who? Responsibility and replacement"
+author: "Sarah A. Wu and Tobias Gerstenberg"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  bookdown::html_document2:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+---
+
+# Setup
+
+```{r setup, include = F, message = F, warning = F}
+# load relevant libraries and functions
+require(knitr)         # for knitting
+library(ggstatsplot)   # extension of ggplot2insta
+library(lme4)          # for mixed effects models 
+library(DT)            # for datatable() function 
+library(brms)          # for Bayesian regression models
+library(Metrics)       # for RMSE
+library(Hmisc)         # for bootstrapped confidence intervals
+library(xtable)        # for converting to LaTex tables
+library(scales)        # hue palette
+library(lemon)         # shift_legend
+library(ggplotify)     # turn gtables into ggplots
+library(showtext)      # for fonts
+library(broom.mixed)   # for augmenting fitted models
+library(png)           # for working with images
+library(grid)
+library(egg)           # for geom_custom
+library(patchwork)     # for multiple plots
+library(tidyverse)     # for everything else
+
+knitr::opts_chunk$set(echo = T, warning = F, message = F)
+
+# set default plot theme 
+theme_set(theme_classic() + 
+            theme(text = element_text(size = 14))) 
+
+# suppress warnings about grouping 
+options(dplyr.summarise.inform = F)
+options(xtable.floating = F)
+options(xtable.timestamp = "")
+
+set.seed(1)
+
+figures_dir = '../figures/'
+data_dir = '../data/'
+```
+
+# Helper functions
+
+## Demographics
+
+This classification is based on the US Census Bureau, which counts people of MENA (Middle Eastern and North African) descent as White. Hispanic/Latinx is not a race according to the Census (it's an ethnicity).
+```{r}
+fem = c('female', 'feminine', 'f', 'women')
+masc = c('male', 'man', 'm', 'trans man', 'masculine', 'masculino')
+nonb = c('non-binary')
+
+white = c('caucasian', 'caucasian/white', 'caucasic', 'caucasoid', 'european', 'greek - white',
+          'italian', 'polish', 'middle eastern', 'egyptian', 'mediterranean white', 'mena',
+          'south european caucasian', 'white', 'white british', 'white/caucasian', 'whitr')
+black = c('black', 'black/african american', 'north african')
+asian = c('asian', 'indian')
+ind_nat = c('american indian/alaska native')
+multi = c('mixed', 'asian and white', 'asian/white', 'black/aa + asian', 'multi-racial',
+          'white + asian')
+other = c('brown', 'latinx/hispanic/caribbean', 'prefer not to say')
+
+```
+
+```{r}
+print_demographics = function(data) {
+  data = data %>%
+    mutate(gender = tolower(gender),
+           race = tolower(race),
+           gender = case_when(gender %in% fem ~ 'Female',
+                              gender %in% masc ~ 'Male',
+                              gender %in% nonb ~ 'Non-binary',
+                              TRUE ~ NA_character_),
+           race = case_when(race %in% white ~ 'White',
+                            race %in% black ~ 'Black',
+                            race %in% asian ~ 'Asian',
+                            race %in% ind_nat ~ 'American Indian/Alaska Native',
+                            race %in% multi ~ 'Multiracial',
+                            race %in% other ~ 'Undisclosed/other',
+                            TRUE ~ NA_character_))
+  # gender
+  data %>%
+    group_by(gender) %>%
+    summarise(n = n()) %>%
+    print()
+  
+  # age
+  print('age:')
+  mean(data$age, na.rm = T) %>% print()
+  sd(data$age, na.rm = T) %>% print()
+  
+  # race
+  data %>%
+    group_by(race) %>%
+    summarise(n = n()) %>%
+    print()
+  
+  # ethnicity
+  data %>%
+    group_by(ethnicity) %>%
+    summarise(n = n()) %>%
+    print()
+
+  # time taken
+  print('time taken (min):')
+  print(mean(data$time, na.rm = T)/60/1000)
+  print(sd(data$time, na.rm = T)/60/1000)
+}
+```
+
+
+## Parameter search
+
+### Uniform probability
+```{r}
+update_search_one = function(exp, condition, p) {
+  type = ifelse(condition == 'agent', 'craft', 'color')
+  
+  data = get(paste0('data.exp', exp, '.', condition)) %>%
+    mutate(prob = 1 - (1-p)^num)
+  info = get(paste0('info.exp', exp, '.', condition))
+  model = lmer(resp ~ 1 + prob + (1 | id),
+               data = data)
+  data_means = data %>%
+    mutate(pred = model %>%
+            predict(newdata = data,
+                    re.form = NA)) %>%
+    group_by_at(c('trial', type, 'pred')) %>%
+    summarise(resp = mean(resp),
+              pred = mean(pred)) %>%
+    merge(info %>%
+            select(trial, type),
+          by = c('trial', type))
+  rmse = rmse(data_means$resp, data_means$pred)
+  data_rmse = get(paste0('rmse.exp', exp, '.', condition, '_uniform')) %>%
+    rbind(c(p, rmse))
+  
+  return(data_rmse)
+}
+```
+
+
+```{r}
+plot_search_one = function(exp, condition) {
+  data_rmse =  get(paste0('rmse.exp', exp, '.', condition, '_uniform'))
+  
+  g = ggplot(data_rmse,
+             aes(x = p,
+                 y = rmse)) +
+    geom_point() +
+    # best parametrization
+    geom_point(data = data_rmse %>%
+                 filter(rmse == min(rmse)),
+               color = 'red') +
+    ggtitle(paste(condition, 'condition')) +
+    theme(text = element_text(size = 12),
+          axis.ticks.x = element_blank()) +
+    scale_x_continuous(name = 'p',
+                       limits = c(0, 1),
+                       breaks = seq(0, 1, by = 0.2)) +
+    scale_y_continuous(name = 'RMSE',
+                       limits = c(0, 5.5),
+                       breaks = seq(0, 5))
+  
+  return(g)
+}
+```
+
+
+### Varying probabilities
+```{r}
+update_search_two = function(exp, condition, p_low, p_high) {
+  type = ifelse(condition == 'agent', 'craft', 'color')
+  
+  data = get(paste0('data.exp', exp, '.', condition)) %>%
+    mutate(prob = 1 - (1-p_low)^low * (1-p_high)^high)
+  info = get(paste0('info.exp', exp, '.', condition))
+  model = lmer(resp ~ 1 + prob + (1 | id),
+               data = data)
+  data_means = data %>%
+    mutate(pred = model %>%
+            predict(newdata = data,
+                    re.form = NA)) %>%
+    group_by_at(c('trial', type, 'pred')) %>%
+    summarise(resp = mean(resp),
+              pred = mean(pred)) %>%
+    merge(info %>%
+            select(trial, type),
+          by = c('trial', type))
+  rmse = rmse(data_means$resp, data_means$pred)
+  data_rmse = get(paste0('rmse.exp', exp, '.', condition, '_full')) %>%
+    rbind(c(p_low, p_high, rmse))
+  
+  return(data_rmse)
+}
+```
+
+```{r}
+plot_search_two = function(exp, condition) {
+  data_rmse =  get(paste0('rmse.exp', exp, '.', condition, '_full')) %>%
+    mutate(p_low = as.factor(p_low),
+           p_high = as.factor(p_high))
+  
+  g = ggplot(data_rmse,
+             aes(x = p_low,
+                 y = p_high,
+                 fill = rmse)) +
+    geom_tile(color = 'black') +
+    coord_fixed() + # square tiles
+    # best parametrization
+    geom_point(data = data_rmse %>%
+                 filter(rmse == min(rmse)),
+               color = 'red',
+               size = 2) +
+    scale_fill_gradient(low = "gray20", high = "white") +
+    guides(fill = guide_colourbar(barwidth = 0.5,
+                                  barheight = 5,
+                                  title = 'RMSE')) +
+    ggtitle(paste(condition, 'condition')) +
+    theme(text = element_text(size = 12),
+          legend.position = c(0.9, 0.3),
+          axis.ticks.x = element_blank()) +
+    scale_x_discrete(name = 'low availability p',
+                     breaks = seq(0, 1, by = 0.2)) +
+    scale_y_discrete(name = 'high availability p',
+                     breaks = seq(0, 1, by = 0.2))
+  
+  return(g)
+}
+```
+
+
+## Make scatter plot
+```{r}
+make_scatter = function(data_means, model_name, xlabel, limits) {
+  col_name = paste('pred_', model_name, sep = '')
+  
+  if (model_name == 'baseline') {
+    r = 'N/A'
+  } else {
+    r = cor(data_means$resp_mean, data_means[[col_name]]) %>%
+      round(2)
+  }
+  
+  rmse = rmse(data_means$resp_mean, data_means[[col_name]])
+  
+  g = ggplot(data = data_means,
+             aes(x = get(col_name),
+                 y = resp_mean)) +
+    geom_abline(intercept = 0, slope = 1, linetype = 2) +
+    geom_linerange(size = 0.5, 
+                   mapping = aes(ymin = resp_low,
+                                 ymax = resp_high),
+                   color = "lightgray") +
+    geom_point(size = 2, shape = 21, stroke = 0.5,
+               fill = 'gray', color = 'black') +
+    theme(text = element_text(size = 12),
+          legend.position = "none") +
+    annotate('text',
+             label = sprintf('r = %s\nRMSE = %.2f', r, rmse),
+             hjust = 0,   # left align
+             x = limits[1], y = limits[2]) +
+    scale_x_continuous(name = xlabel,
+                       limits = limits) +
+    scale_y_continuous(name = 'responsibility judgment',
+                       limits = limits,
+                       expand = expansion(0.1))
+
+  return(g)
+}
+```
+
+# Experiment 1
+
+## Data
+
+### Agent condition
+
+#### Trial info
+```{r}
+info.exp1.agent = read_csv(paste0(data_dir, 'experiment1_agent/trial_info.csv'),
+                           show_col_types = F) %>%
+  pivot_longer(cols = !trial,
+               names_to = c('.value', 'craft'),
+               names_pattern = '(.+)_(.)')
+```
+
+#### Response data
+```{r}
+data.exp1.agent = read_csv(paste0(data_dir, 'experiment1_agent/trials.csv'),
+                           show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid,
+         b = resp_b, c = resp_c, t = resp_t) %>%
+  # filter by exclusion trial X1
+  pivot_wider(names_from = trial, values_from = c(c, b, t)) %>%
+  rowwise(id) %>%
+  filter(max(c_X1, b_X1, t_X1) - min(c_X1, b_X1, t_X1) < 30) %>%
+  # pivot back to long form
+  pivot_longer(cols = !id,
+               names_to = 'trial',
+               values_to = 'resp') %>%
+  separate(col = trial,
+           into = c('craft', 'trial'),
+           sep = '_') %>%
+  # ignore exclusion trial and practice trials
+  filter(!(trial %in% c("X1", 1, 2))) %>%
+  # merge with trial info
+  merge(info.exp1.agent,
+        by = c('trial', 'craft')) %>%
+  # factor variables for plotting
+  mutate(id = factor(id),
+         plot_id = as.factor(as.integer(id)),
+         craft = factor(craft))
+```
+
+Number of participants:
+```{r}
+length(unique(data.exp1.agent$id))
+```
+
+#### Participant data
+Participants were asked: “What factors influenced how you decided to respond? Do you have any questions or comments regarding the experiment?”
+```{r}
+participants.exp1.agent = read_csv(paste0(data_dir, 'experiment1_agent/participants.csv'),
+                                   show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid) %>%
+  filter(id %in% data.exp1.agent$id) %>%
+  mutate(id = factor(id)) %>%
+  left_join(data.exp1.agent %>%
+              distinct(id, plot_id),
+            by = 'id')
+
+participants.exp1.agent %>%
+  select(plot_id, feedback) %>% 
+  datatable()
+```
+### Object condition
+
+#### Trial info
+```{r}
+info.exp1.object = read_csv(paste0(data_dir, 'experiment1_object/trial_info.csv'),
+                            show_col_types = F) %>%
+  pivot_longer(cols = !trial,
+               names_to = c('.value', 'color'),
+               names_pattern = '(.+)_(.)')
+```
+
+#### Response data
+```{r}
+data.exp1.object = read_csv(paste0(data_dir, 'experiment1_object/trials.csv'),
+                            show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid,
+         y = resp_y, g = resp_g, b = resp_b) %>%
+  # filter by exclusion trial X1
+  pivot_wider(names_from = trial, values_from = c(y, g, b)) %>%
+  rowwise(id) %>%
+  filter(max(y_X1, g_X1, b_X1) - min(y_X1, g_X1, b_X1) < 30) %>%
+  # pivot back to long form
+  pivot_longer(cols = !id,
+               names_to = 'trial',
+               values_to = 'resp') %>%
+  separate(col = trial,
+           into = c('color', 'trial'),
+           sep = '_') %>%
+  # ignore exclusion trial and practice trials
+  filter(!(trial %in% c("X1", 1, 2))) %>%
+  # merge with trial info
+  merge(info.exp1.object,
+        by = c('trial', 'color')) %>%
+  # factor variables for plotting
+  mutate(id = factor(id),
+         plot_id = as.factor(as.integer(id)),
+         color = factor(color))
+```
+
+Number of participants:
+```{r}
+length(unique(data.exp1.object$id))
+```
+
+#### Participant data
+Participants were asked: “What factors influenced how you decided to respond? Do you have any questions or comments regarding the experiment?”
+```{r}
+participants.exp1.object = read_csv(paste0(data_dir, 'experiment1_object/participants.csv'),
+                                    show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid) %>%
+  filter(id %in% data.exp1.object$id) %>%
+  mutate(id = factor(id)) %>%
+  left_join(data.exp1.object %>%
+              distinct(id, plot_id),
+            by = 'id')
+
+participants.exp1.object %>%
+  select(plot_id, feedback) %>% 
+  datatable()
+```
+
+### Demographics
+```{r}
+participants.exp1.agent %>%
+  rbind(participants.exp1.object) %>%
+  print_demographics()
+```
+
+## Models
+
+### Agent condition
+
+#### Parameter search
+```{r}
+rmse.exp1.agent_uniform = data.frame()
+for (p in seq(0, 1, by = 0.05)) {
+  rmse.exp1.agent_uniform = update_search_one(1, 'agent', p)
+}
+colnames(rmse.exp1.agent_uniform) = c('p', 'rmse')
+
+# get optimal values
+p.exp1.agent = rmse.exp1.agent_uniform[which.min(rmse.exp1.agent_uniform$rmse),]$p
+
+# create plot
+plot_rmse.exp1.agent = plot_search_one(1, 'agent')
+
+# update response data
+data.exp1.agent = data.exp1.agent %>%
+  mutate(prob = 1 - (1 - p.exp1.agent)^num)
+```
+
+#### Overall models
+
+Fitting baseline model:
+```{r}
+fit.exp1.agent_baseline = brm(
+  formula = resp ~ 1 + (1 | id),
+  data = data.exp1.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp1.agent_baseline")
+```
+
+Fitting counterfactual replacement model (CRM):
+```{r}
+fit.exp1.agent_crm = brm(
+  formula = resp ~ 1 + prob +  (1 + prob | id),
+  data = data.exp1.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp1.agent_crm")
+```
+
+Comparing models with leave-one-out cross-validation:
+```{r}
+fit.exp1.agent_baseline = add_criterion(
+  fit.exp1.agent_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp1.agent_baseline")
+
+fit.exp1.agent_crm = add_criterion(
+  fit.exp1.agent_crm,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp1.agent_crm")
+
+loo_compare(fit.exp1.agent_baseline,
+            fit.exp1.agent_crm)
+```
+
+#### Individual models
+```{r eval = F}
+# initialize the models 
+fit.exp1.agent_baseline_individual = brm(
+  formula = resp ~ 1,
+  data = data.exp1.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp1.agent_baseline_individual")
+
+fit.exp1.agent_crm_individual = brm(
+  formula = resp ~ 1 + prob,
+  data = data.exp1.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp1.agent_crm_individual")
+
+# update model fits for each participant 
+data.exp1.agent_model_fits = data.exp1.agent %>% 
+  group_by(plot_id) %>% 
+  nest() %>% 
+  ungroup() %>% 
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp1.agent_baseline_individual,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_crm = map(.x = data,
+                       .f = ~ update(fit.exp1.agent_crm_individual,
+                                     newdata = .x,
+                                     seed = 1))) %>%
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm = map(.x = fit_crm,
+                       .f = ~ add_criterion(.x, criterion = "loo")),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           crm = fit_crm),
+                                 .f = ~ loo_compare(..1, ..2)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2"),
+                             labels = c("baseline",
+                                        "crm")))
+
+save(list = c("data.exp1.agent_model_fits"),
+     file = paste0(data_dir, 'experiment1_agent/model-fits.RData'))
+```
+
+```{r}
+load(file = paste0(data_dir, 'experiment1_agent/model-fits.RData'))
+
+data.exp1.agent_model_fits %>% 
+  count(best_model) %>%
+  arrange(desc(n))
+```
+
+
+### Object condition
+
+#### Parameter search
+```{r}
+rmse.exp1.object_uniform = data.frame()
+for (p in seq(0, 1, by = 0.05)) {
+  rmse.exp1.object_uniform = update_search_one(1, 'object', p)
+}
+colnames(rmse.exp1.object_uniform) = c('p', 'rmse')
+
+# get optimal values
+p.exp1.object = rmse.exp1.object_uniform[which.min(rmse.exp1.object_uniform$rmse),]$p
+
+# create plot
+plot_rmse.exp1.object = plot_search_one(1, 'object')
+
+# update response data
+data.exp1.object = data.exp1.object %>%
+  mutate(prob = 1 - (1 - p.exp1.object)^num)
+```
+
+#### Overall models
+
+Fitting baseline model:
+```{r}
+fit.exp1.object_baseline = brm(
+  formula = resp ~ 1 + (1 | id),
+  data = data.exp1.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp1.object_baseline")
+```
+
+Fitting counterfactual replacement model (CRM):
+```{r}
+fit.exp1.object_crm = brm(
+  formula = resp ~ 1 + prob +  (1 + prob | id),
+  data = data.exp1.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp1.object_crm")
+```
+
+Comparing models with leave-one-out cross-validation:
+```{r}
+fit.exp1.object_baseline = add_criterion(
+  fit.exp1.object_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp1.object_baseline")
+
+fit.exp1.object_crm = add_criterion(
+  fit.exp1.object_crm,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp1.object_crm")
+
+loo_compare(fit.exp1.object_baseline,
+            fit.exp1.object_crm)
+```
+
+#### Individual models
+```{r eval = F}
+# initialize the models 
+fit.exp1.object_baseline_individual = brm(
+  formula = resp ~ 1,
+  data = data.exp1.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp1.object_baseline_individual")
+
+fit.exp1.object_crm_individual = brm(
+  formula = resp ~ 1 + prob,
+  data = data.exp1.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp1.object_crm_individual")
+
+# update model fits for each participant 
+data.exp1.object_model_fits = data.exp1.object %>% 
+  group_by(plot_id) %>% 
+  nest() %>% 
+  ungroup() %>% 
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp1.object_baseline_individual,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_crm = map(.x = data,
+                       .f = ~ update(fit.exp1.object_crm_individual,
+                                     newdata = .x,
+                                     seed = 1))) %>%
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm = map(.x = fit_crm,
+                       .f = ~ add_criterion(.x, criterion = "loo")),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           crm = fit_crm),
+                                 .f = ~ loo_compare(..1, ..2)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2"),
+                             labels = c("baseline",
+                                        "crm")))
+
+save(list = c("data.exp1.object_model_fits"),
+     file = paste0(data_dir, 'experiment1_object/model-fits.RData'))
+```
+
+```{r}
+load(file = paste0(data_dir, 'experiment1_object/model-fits.RData'))
+
+data.exp1.object_model_fits %>% 
+  count(best_model) %>%
+  arrange(desc(n))
+```
+
+
+## Plots
+
+### Parameter search
+```{r fig.width = 9, fit.height = 4}
+plot_rmse.exp1.agent + plot_spacer() + plot_rmse.exp1.object +
+  plot_annotation(tag_levels = 'A') +
+  plot_layout(widths = c(4, 1, 4)) &
+  theme(plot.tag = element_text(size = 24))
+
+ggsave(paste0(figures_dir, '/experiment1/p_search.pdf'), width = 9, height = 4)
+```
+
+### Setting up data
+```{r}
+data.exp1.agent = data.exp1.agent %>%
+  cbind(fit.exp1.agent_baseline %>%
+          fitted(newdata = data.exp1.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_baseline = Estimate) %>%
+          select(pred_baseline)) %>%
+  cbind(fit.exp1.agent_crm %>%
+          fitted(newdata = data.exp1.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm = Estimate) %>%
+          select(pred_crm))
+
+data.exp1.agent_means = data.exp1.agent %>%
+  group_by(trial, craft) %>%
+  summarise(resp_mean = mean(resp),
+            resp_low = smean.cl.boot(resp)[2],
+            resp_high = smean.cl.boot(resp)[3]) %>%
+  merge(info.exp1.agent, by = c('trial', 'craft')) %>%
+  left_join(data.exp1.agent %>%
+              distinct(trial, craft, pred_baseline, pred_crm),
+            by = c('trial', 'craft'))
+```
+
+```{r}
+data.exp1.object = data.exp1.object  %>%
+  cbind(fit.exp1.object_baseline %>%
+          fitted(newdata = data.exp1.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_baseline = Estimate) %>%
+          select(pred_baseline)) %>%
+  cbind(fit.exp1.object_crm %>%
+          fitted(newdata = data.exp1.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm = Estimate) %>%
+          select(pred_crm))
+
+data.exp1.object_means = data.exp1.object  %>%
+  group_by(trial, color) %>%
+  summarise(resp_mean = mean(resp),
+            resp_low = smean.cl.boot(resp)[2],
+            resp_high = smean.cl.boot(resp)[3]) %>%
+  merge(info.exp1.object, by = c('trial', 'color')) %>%
+  left_join(data.exp1.object  %>%
+              distinct(trial, color, pred_baseline, pred_crm),
+            by = c('trial', 'color'))
+```
+
+```{r}
+data.exp1 = data.exp1.agent %>%
+  mutate(condition = 'agent') %>%
+  bind_rows(data.exp1.object %>%
+              mutate(condition = 'object'))
+```
+
+### Bar plot
+
+```{r fig.width = 8, fig.height = 3}
+num_labels = c('0 replacements', '1 replacement', '2 replacements', '3 replacements')
+names(num_labels) = c(0, 1, 2, 3)
+
+ggplot(data = data.exp1,
+       mapping = aes(x = condition,
+                     y = resp,
+                     fill = condition)) +
+  stat_summary(fun = "mean",
+               geom = "bar",
+               color = 'black',
+               width = 0.8) +
+  stat_summary(fun.data = "mean_cl_boot",
+               geom = "linerange",
+               size = 1) +
+  geom_point(position = position_jitter(width = 0.1, height = 0),
+             shape = 21,
+             alpha = 0.04,
+             size = 0.5,
+             show.legend = F) +
+  stat_summary(mapping = aes(y = pred_crm),
+               fun = 'mean',
+               geom = 'point',
+               size = 2,
+               shape = 21,
+               show.legend = F) +
+  facet_wrap(~ num, nrow = 1,
+             labeller = labeller(num = num_labels)) +
+  scale_fill_manual(values = c('agent' = 'gray90',
+                               'objectect' = 'gray75')) +
+  theme(text = element_text(size = 12),
+        legend.position = 'bottom',
+        legend.direction = 'horizontal',
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid.major.y = element_line()) +
+  scale_y_continuous(name = 'responsibility judgment',
+                     limits = c(0, 100),
+                     expand = expansion(mult = 0.05))
+
+# ggsave(paste0(figures_dir, 'experiment1/bar.pdf'), width = 8, height = 3)
+```
+
+
+# Experiment 2
+
+## Data
+
+### Agent condition
+
+#### Trial info
+```{r}
+info.exp2.agent = read_csv(paste0(data_dir, 'experiment2_agent/trial_info.csv'),
+                           show_col_types = F) %>%
+  pivot_longer(cols = !trial,
+               names_to = c('.value', 'craft'),
+               names_pattern = '(.+)_(.)') %>%
+  mutate(num = low + high)
+```
+
+#### Response data
+```{r}
+data.exp2.agent = read_csv(paste0(data_dir, 'experiment2_agent/trials.csv'),
+                           show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid,
+         b = resp_b, c = resp_c, t = resp_t) %>%
+  # filter by exclusion trial X1
+  pivot_wider(names_from = trial, values_from = c(c, b, t)) %>%
+  rowwise(id) %>%
+  # pivot back to long form
+  pivot_longer(cols = !id,
+               names_to = 'trial',
+               values_to = 'resp') %>%
+  separate(col = trial,
+           into = c('craft', 'trial'),
+           sep = '_') %>%
+  # ignore exclusion trial and practice trials
+  filter(!(trial %in% c("X1", 1, 2))) %>%
+  # merge with trial info
+  merge(info.exp2.agent,
+        by = c('trial', 'craft')) %>%
+  # factor variables for plotting
+  mutate(id = factor(id),
+         plot_id = as.factor(as.integer(id)),
+         craft = factor(craft))
+```
+
+Number of participants:
+```{r}
+length(unique(data.exp2.agent$id))
+```
+
+#### Participant data
+Participants were asked: “What factors influenced how you decided to respond? Do you have any questions or comments regarding the experiment?”
+```{r}
+participants.exp2.agent = read_csv(paste0(data_dir, 'experiment2_agent/participants.csv'),
+                                   show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid) %>%
+  filter(id %in% data.exp2.agent$id) %>%
+  mutate(id = factor(id)) %>%
+  left_join(data.exp2.agent %>%
+              distinct(id, plot_id),
+            by = 'id')
+
+participants.exp2.agent %>%
+  select(plot_id, feedback) %>% 
+  datatable()
+```
+
+### Object condition
+
+#### Trial info
+```{r}
+info.exp2.object = read_csv(paste0(data_dir, 'experiment2_object/trial_info.csv'),
+                            show_col_types = F) %>%
+  pivot_longer(cols = !trial,
+               names_to = c('.value', 'color'),
+               names_pattern = '(.+)_(.)') %>%
+  mutate(num = low + high)
+```
+
+#### Response data
+```{r}
+data.exp2.object = read_csv(paste0(data_dir, 'experiment2_object/trials.csv'),
+                            show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid,
+         y = resp_y, g = resp_g, b = resp_b) %>%
+  # filter by exclusion trial X1
+  pivot_wider(names_from = trial, values_from = c(y, g, b)) %>%
+  rowwise(id) %>%
+  filter(max(y_X1, g_X1, b_X1) - min(y_X1, g_X1, b_X1) < 30) %>%
+  # pivot back to long form
+  pivot_longer(cols = !id,
+               names_to = 'trial',
+               values_to = 'resp') %>%
+  separate(col = trial,
+           into = c('color', 'trial'),
+           sep = '_') %>%
+  # ignore exclusion trial and practice trials
+  filter(!(trial %in% c("X1", 1, 2))) %>%
+  # merge with trial info
+  merge(info.exp2.object,
+        by = c('trial', 'color')) %>%
+  # factor variables for plotting
+  mutate(id = factor(id),
+         plot_id = as.factor(as.integer(id)),
+         color = factor(color))
+```
+
+Number of participants:
+```{r}
+length(unique(data.exp2.object$id))
+```
+
+#### Participant data
+Participants were asked: “What factors influenced how you decided to respond? Do you have any questions or comments regarding the experiment?”
+```{r}
+participants.exp2.object = read_csv(paste0(data_dir, 'experiment2_object/participants.csv'),
+                                    show_col_types = F) %>%
+  select(-error, -proliferate.condition) %>%
+  rename(id = workerid) %>%
+  filter(id %in% data.exp2.object$id) %>%
+  mutate(id = factor(id)) %>%
+  left_join(data.exp2.object %>%
+              distinct(id, plot_id),
+            by = 'id')
+
+participants.exp2.object %>%
+  select(plot_id, feedback) %>% 
+  datatable()
+```
+
+### Demographics
+```{r}
+participants.exp2.agent %>%
+  rbind(participants.exp2.object) %>%
+  print_demographics()
+```
+
+
+## Models
+
+### Agent condition
+
+#### Parameter search
+
+Uniform probabilities:
+```{r}
+rmse.exp2.agent_uniform = data.frame()
+for (p in seq(0, 1, by = 0.05)) {
+  rmse.exp2.agent_uniform = update_search_one(2, 'agent', p)
+}
+colnames(rmse.exp2.agent_uniform) = c('p', 'rmse')
+
+# get optimal values
+p.exp2.agent = rmse.exp2.agent_uniform[which.min(rmse.exp2.agent_uniform$rmse),]$p
+
+# create plot
+plot_rmse.exp2.agent_uniform = plot_search_one(2, 'agent')
+
+# update response data
+data.exp2.agent = data.exp2.agent %>%
+  mutate(prob_uniform = 1 - (1 - p.exp2.agent)^num)
+```
+
+Varying probabilities:
+```{r}
+rmse.exp2.agent_full = data.frame()
+for (p_low in seq(0, 1, by = 0.05)) {
+  for (p_high in seq(p_low, 1, by = 0.05)) {
+    rmse.exp2.agent_full = update_search_two(2, 'agent', p_low, p_high)
+  }
+}
+colnames(rmse.exp2.agent_full) = c('p_low', 'p_high', 'rmse')
+
+# get optimal values
+p.exp2.agent_low = rmse.exp2.agent_full[which.min(rmse.exp2.agent_full$rmse),]$p_low
+p.exp2.agent_high = rmse.exp2.agent_full[which.min(rmse.exp2.agent_full$rmse),]$p_high
+
+# create plot
+plot_rmse.exp2.agent_full = plot_search_two(2, 'agent')
+
+# update response data
+data.exp2.agent = data.exp2.agent %>%
+  mutate(prob_full = 1 - (1 - p.exp2.agent_low)^low * (1 - p.exp2.agent_high)^high)
+```
+
+
+#### Overall models
+
+Fitting baseline model:
+```{r}
+fit.exp2.agent_baseline = brm(
+  formula = resp ~ 1 + (1 | id),
+  data = data.exp2.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp2.agent_baseline")
+```
+
+Fitting CRM (uniform):
+```{r}
+fit.exp2.agent_crm_uniform = brm(
+  formula = resp ~ 1 + prob_uniform + (1 + prob_uniform | id),
+  data = data.exp2.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp2.agent_crm_uniform")
+```
+
+Fitting CRM (full):
+```{r}
+fit.exp2.agent_crm_full = brm(
+  formula = resp ~ 1 + prob_full + (1 + prob_full | id),
+  data = data.exp2.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp2.agent_crm_full")
+```
+
+Comparing models with leave-one-out cross-validation:
+```{r}
+fit.exp2.agent_baseline = add_criterion(
+  fit.exp2.agent_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.agent_baseline")
+
+fit.exp2.agent_crm_uniform = add_criterion(
+  fit.exp2.agent_crm_uniform,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.agent_crm_uniform")
+
+fit.exp2.agent_crm_full = add_criterion(
+  fit.exp2.agent_crm_full,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.agent_crm_full")
+
+loo_compare(fit.exp2.agent_baseline,
+            fit.exp2.agent_crm_uniform,
+            fit.exp2.agent_crm_full)
+```
+
+#### Individual models
+```{r eval = F}
+fit.exp2.agent_baseline_individual = brm(
+  formula = resp ~ 1,
+  data = data.exp2.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp2.agent_baseline_individual")
+
+fit.exp2.agent_crm_uniform_individual = brm(
+  formula = resp ~ 1 + prob_uniform,
+  data = data.exp2.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp2.agent_crm_uniform_individual")
+
+fit.exp2.agent_crm_full_individual = brm(
+  formula = resp ~ 1 + prob_full,
+  data = data.exp2.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp2.agent_crm_full_individual")
+
+# update model fits for each participant 
+data.exp2.agent_model_fits = data.exp2.agent %>% 
+  group_by(plot_id) %>% 
+  nest() %>% 
+  ungroup() %>% 
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp2.agent_baseline_individual,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_crm_uniform = map(.x = data,
+                               .f = ~ update(fit.exp2.agent_crm_uniform_individual,
+                                             newdata = .x,
+                                             seed = 1)),
+         fit_crm_full = map(.x = data,
+                            .f = ~ update(fit.exp2.agent_crm_full_individual,
+                                          newdata = .x,
+                                          seed = 1))) %>%
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm_uniform = map(.x = fit_crm_uniform,
+                               .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm_full = map(.x = fit_crm_full,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           crm_uniform = fit_crm_uniform,
+                                           crm_full = fit_crm_full),
+                                 .f = ~ loo_compare(..1, ..2, ..3)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2", "..3"),
+                             labels = c("baseline",
+                                        "crm_uniform",
+                                        "crm_full")))
+
+save(list = c("data.exp2.agent_model_fits"),
+     file = paste0(data_dir, 'experiment2_agent/model-fits.RData'))
+```
+
+```{r}
+load(file = paste0(data_dir, 'experiment2_agent/model-fits.RData'))
+
+data.exp2.agent_model_fits %>% 
+  count(best_model) %>%
+  arrange(desc(n))
+```
+
+### Object condition
+
+#### Parameter search
+
+Uniform probabilities:
+```{r}
+rmse.exp2.object_uniform = data.frame()
+for (p in seq(0, 1, by = 0.05)) {
+  rmse.exp2.object_uniform = update_search_one(2, 'object', p)
+}
+colnames(rmse.exp2.object_uniform) = c('p', 'rmse')
+
+# get optimal values
+p.exp2.object = rmse.exp2.object_uniform[which.min(rmse.exp2.object_uniform$rmse),]$p
+
+# create plot
+plot_rmse.exp2.object_uniform = plot_search_one(2, 'object')
+
+# update response data
+data.exp2.object = data.exp2.object %>%
+  mutate(prob_uniform = 1 - (1 - p.exp2.object)^num)
+```
+
+Varying probabilities:
+```{r}
+rmse.exp2.object_full = data.frame()
+for (p_low in seq(0, 1, by = 0.05)) {
+  for (p_high in seq(p_low, 1, by = 0.05)) {
+    rmse.exp2.object_full = update_search_two(2, 'object', p_low, p_high)
+  }
+}
+colnames(rmse.exp2.object_full) = c('p_low', 'p_high', 'rmse')
+
+# get optimal values
+p.exp2.object_low = rmse.exp2.object_full[which.min(rmse.exp2.object_full$rmse),]$p_low
+p.exp2.object_high = rmse.exp2.object_full[which.min(rmse.exp2.object_full$rmse),]$p_high
+
+# create plot
+plot_rmse.exp2.object_full = plot_search_two(2, 'object')
+
+# update response data
+data.exp2.object = data.exp2.object %>%
+  mutate(prob_full = 1 - (1 - p.exp2.object_low)^low * (1 - p.exp2.object_high)^high)
+```
+
+#### Overall models
+
+Fitting baseline model:
+```{r}
+fit.exp2.object_baseline = brm(
+  formula = resp ~ 1 + (1 | id),
+  data = data.exp2.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp2.object_baseline")
+```
+
+Fitting CRM (uniform):
+```{r}
+fit.exp2.object_crm_uniform = brm(
+  formula = resp ~ 1 + prob_uniform + (1 + prob_uniform | id),
+  data = data.exp2.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp2.object_crm_uniform")
+```
+
+Fitting CRM (full):
+```{r}
+fit.exp2.object_crm_full = brm(
+  formula = resp ~ 1 + prob_full + (1 + prob_full | id),
+  data = data.exp2.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp2.object_crm_full")
+```
+
+Comparing models with leave-one-out cross-validation:
+```{r}
+fit.exp2.object_baseline = add_criterion(
+  fit.exp2.object_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.object_baseline")
+
+fit.exp2.object_crm_uniform = add_criterion(
+  fit.exp2.object_crm_uniform,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.object_crm_uniform")
+
+fit.exp2.object_crm_full = add_criterion(
+  fit.exp2.object_crm_full,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp2.object_crm_full")
+
+loo_compare(fit.exp2.object_baseline,
+            fit.exp2.object_crm_uniform,
+            fit.exp2.object_crm_full)
+```
+
+#### Individual models
+```{r eval = F}
+fit.exp2.object_baseline_individual = brm(
+  formula = resp ~ 1,
+  data = data.exp2.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp2.object_baseline_individual")
+
+fit.exp2.object_crm_uniform_individual = brm(
+  formula = resp ~ 1 + prob_uniform,
+  data = data.exp2.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp2.object_crm_uniform_individual")
+
+fit.exp2.object_crm_full_individual = brm(
+  formula = resp ~ 1 + prob_full,
+  data = data.exp2.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp2.object_crm_full_individual")
+
+# update model fits for each participant 
+data.exp2.object_model_fits = data.exp2.object %>% 
+  group_by(plot_id) %>% 
+  nest() %>% 
+  ungroup() %>% 
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp2.object_baseline_individual,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_crm_uniform = map(.x = data,
+                               .f = ~ update(fit.exp2.object_crm_uniform_individual,
+                                             newdata = .x,
+                                             seed = 1)),
+         fit_crm_full = map(.x = data,
+                            .f = ~ update(fit.exp2.object_crm_full_individual,
+                                          newdata = .x,
+                                          seed = 1))) %>%
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm_uniform = map(.x = fit_crm_uniform,
+                               .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm_full = map(.x = fit_crm_full,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           crm_uniform = fit_crm_uniform,
+                                           crm_full = fit_crm_full),
+                                 .f = ~ loo_compare(..1, ..2, ..3)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2", "..3"),
+                             labels = c("baseline",
+                                        "crm_uniform",
+                                        "crm_full")))
+
+save(list = c("data.exp2.object_model_fits"),
+     file = paste0(data_dir, 'experiment2_object/model-fits.RData'))
+```
+
+```{r}
+load(file = paste0(data_dir, 'experiment2_object/model-fits.RData'))
+
+data.exp2.object_model_fits %>% 
+  count(best_model) %>%
+  arrange(desc(n))
+```
+
+## Plots
+
+### Parameter search
+```{r fig.width = 9, fig.height = 4}
+plot_rmse.exp2.agent_uniform + plot_spacer() + plot_rmse.exp2.object_uniform +
+  plot_annotation(tag_levels = 'A') +
+  plot_layout(widths = c(4, 1, 4)) &
+  theme(plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment2/p_search_uniform.pdf'), width = 9, height = 4)
+```
+
+```{r fig.width = 9, fig.height = 4}
+plot_rmse.exp2.agent_full + plot_spacer() + plot_rmse.exp2.object_full +
+  plot_annotation(tag_levels = 'A') +
+  plot_layout(widths = c(4, 1, 4)) &
+  theme(plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment2/p_search_full.pdf'), width = 9, height = 4)
+```
+
+
+### Setting up data
+```{r}
+data.exp2.agent = data.exp2.agent %>%
+  cbind(fit.exp2.agent_baseline %>%
+          fitted(newdata = data.exp2.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_baseline = Estimate) %>%
+          select(pred_baseline)) %>%
+  cbind(fit.exp2.agent_crm_uniform %>%
+          fitted(newdata = data.exp2.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm_uniform = Estimate) %>%
+          select(pred_crm_uniform)) %>%
+  cbind(fit.exp2.agent_crm_full %>%
+          fitted(newdata = data.exp2.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm_full = Estimate) %>%
+          select(pred_crm_full))
+
+data.exp2.agent_means = data.exp2.agent %>%
+  group_by(trial, craft) %>%
+  summarise(resp_mean = mean(resp),
+            resp_low = smean.cl.boot(resp)[2],
+            resp_high = smean.cl.boot(resp)[3]) %>%
+  merge(info.exp2.agent, by = c('trial', 'craft')) %>%
+  left_join(data.exp2.agent %>%
+              distinct(trial, craft, pred_baseline,
+                       pred_crm_uniform, pred_crm_full),
+            by = c('trial', 'craft'))
+```
+
+```{r}
+data.exp2.object = data.exp2.object  %>%
+  cbind(fit.exp2.object_baseline %>%
+          fitted(newdata = data.exp2.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_baseline = Estimate) %>%
+          select(pred_baseline)) %>%
+  cbind(fit.exp2.object_crm_uniform %>%
+          fitted(newdata = data.exp2.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm_uniform = Estimate) %>%
+          select(pred_crm_uniform)) %>%
+  cbind(fit.exp2.object_crm_full %>%
+          fitted(newdata = data.exp2.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm_full = Estimate) %>%
+          select(pred_crm_full))
+
+data.exp2.object_means = data.exp2.object  %>%
+  group_by(trial, color) %>%
+  summarise(resp_mean = mean(resp),
+            resp_low = smean.cl.boot(resp)[2],
+            resp_high = smean.cl.boot(resp)[3]) %>%
+  merge(info.exp2.object, by = c('trial', 'color')) %>%
+  left_join(data.exp2.object  %>%
+              distinct(trial, color, pred_baseline,
+                       pred_crm_uniform, pred_crm_full),
+            by = c('trial', 'color'))
+```
+
+```{r}
+labels.exp2 = info.exp2.agent %>% 
+  distinct(low, high, num) %>% 
+  arrange(num, high) %>%
+  mutate(condition = NA,
+         index = 1:n(),
+         grob = map2(.x = low,
+                     .y = high,
+                     .f = ~ readPNG(paste0(figures_dir, 'experiment2/combos/',
+                                           .x, .y, '.png'))))
+
+model_labels.exp2 = c('baseline' = 'Contribution model',
+                      'crm_uniform' = 'CRM (uniform)',
+                      'crm_full' = 'CRM (full)')
+
+model_order.exp2 = c('baseline', 'crm_uniform', 'crm_full')
+```
+
+### Scatter plots
+```{r fig.width = 8, fig.height = 8}
+scatter.exp2.agent_uniform = make_scatter(
+  data.exp2.agent_means, 'crm_uniform', 'CRM (uniform)', c(40, 100))
+scatter.exp2.agent_full = make_scatter(
+  data.exp2.agent_means, 'crm_full', 'CRM (full)', c(40, 100))
+
+scatter.exp2.object_uniform = make_scatter(
+  data.exp2.object_means, 'crm_uniform', 'CRM (uniform)', c(40, 100))
+scatter.exp2.object_full = make_scatter(
+  data.exp2.object_means, 'crm_full', 'CRM (full)', c(40, 100))
+
+scatter.exp2.agent_uniform + scatter.exp2.agent_full +
+  scatter.exp2.object_uniform + scatter.exp2.object_full +
+  plot_layout(ncol = 2) +
+  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment2/scatter.pdf'), width = 8, height = 8)
+```
+
+### Bar plots
+```{r}
+make_bar.exp2 = function(data, fill, cutoff) {
+  g = ggplot(data = data,
+             mapping = aes(x = index,
+                           y = resp)) +
+    stat_summary(fun = "mean",
+                 geom = "bar",
+                 color = 'black',
+                 fill = fill,
+                 width = 0.8) +
+    stat_summary(fun.data = "mean_cl_boot",
+                 geom = "linerange",
+                 size = 1) +
+    stat_summary(mapping = aes(y = pred,
+                               fill = model,
+                               shape = model,
+                               size = model),
+                 fun = 'mean',
+                 geom = 'point',
+                 color = 'black',
+                 position = position_dodge(width = 0.5)) +
+    geom_rect(aes(xmin = index - 0.5, xmax = index + 0.5,
+                  ymin = 0, ymax = cutoff),
+              fill = 'white') +
+    geom_custom(data = labels.exp2,
+                mapping = aes(data = grob,
+                              x = index, y = cutoff - 5),
+                grob_fun = function(x) rasterGrob(x,
+                                                  interpolate = T,
+                                                  just = c('center',
+                                                           'bottom'),
+                                                  width = 1/15)) +
+    theme(text = element_text(size = 14),
+          legend.position = c(0.5, 0.9),
+          legend.direction = 'horizontal',
+          legend.title = element_blank(),
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.line.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.major.y = element_line(),
+          plot.margin = margin(t = 0.2, l = 0.2, r = 0.2, b = 0.7, unit = "cm")) +
+    scale_fill_manual(values = c('baseline' = 'black',
+                                 'crm_uniform' = 'gray50',
+                                 'crm_full' = 'white'),
+                      labels = model_labels.exp2,
+                      name = 'model') +
+    scale_size_manual(values = c('baseline' = 1.5,
+                                 'crm_uniform' = 1.5,
+                                 'crm_full' = 2),
+                      labels = model_labels.exp2,
+                      name = 'model') +
+    scale_shape_manual(values = c('baseline' = 21,  # circle
+                                  'crm_uniform' = 24, # triangle
+                                  'crm_full' = 23), # diamond
+                       labels = model_labels.exp2,
+                       name = 'model') +
+    scale_y_continuous(name = 'responsibility judgment',
+                       breaks = seq(0, 100, 25),
+                       expand = expansion(mult = 0.01)) +
+    coord_cartesian(clip = 'off', ylim = c(cutoff, 100))
+  
+  return(g)
+}
+```
+
+```{r fig.width = 10, fig.height = 7}
+bar.exp2.agent = make_bar.exp2(
+  data = data.exp2.agent %>%
+    left_join(labels.exp2 %>%
+                select(low, high, index),
+              by = c('low', 'high')) %>%
+    pivot_longer(cols = starts_with('pred'),
+                 names_to = 'model',
+                 values_to = 'pred') %>%
+    mutate(model = factor(sub('^pred_', '', model),
+                          levels = model_order.exp2)),
+  fill = 'gray90',
+  cutoff = 40
+)
+
+bar.exp2.object = make_bar.exp2(
+  data = data.exp2.object %>%
+    left_join(labels.exp2 %>%
+                select(low, high, index),
+              by = c('low', 'high')) %>%
+    pivot_longer(cols = starts_with('pred'),
+                 names_to = 'model',
+                 values_to = 'pred') %>%
+    mutate(model = factor(sub('^pred_', '', model),
+                          levels = model_order.exp2)),
+  fill = 'gray75',
+  cutoff = 40
+)
+
+bar.exp2.agent + bar.exp2.object + 
+  plot_layout(ncol = 1) +
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment2/bar.pdf'), width = 10, height = 7)
+```
+
+# Experiment 3
+
+## Data
+
+### Agent condition
+
+#### Trial info
+```{r}
+info.exp3.agent = read_csv(paste0(data_dir, 'experiment3_agent/trial_info.csv'),
+                           show_col_types = F) %>%
+  pivot_longer(cols = !trial,
+               names_to = c('.value', 'craft'),
+               names_pattern = '(.+)_(.)') %>%
+  mutate(num = low + high)
+```
+
+#### Response data
+```{r}
+data.exp3.agent = read_csv(paste0(data_dir, 'experiment3_agent/trials.csv'),
+                           show_col_types = F)
+
+# filter participants who accidentally responded more than once
+rm_ids_agent = data.exp3.agent %>%
+  group_by(id) %>%
+  summarise(n = n()/length(unique(info.exp3.agent$trial))) %>%
+  filter(n > 1) %>%
+  .$id
+
+data.exp3.agent = data.exp3.agent %>%
+  filter(!(id %in% rm_ids_agent)) %>%
+  pivot_longer(cols = c(c, t),
+               names_to = 'craft',
+               values_to = 'resp') %>%
+  # ignore exclusion trial and practice trials
+  filter(!(trial %in% c("X1", 1, 2))) %>%
+  # merge with trial info
+  merge(info.exp3.agent,
+        by = c('trial', 'craft')) %>%
+  # factor variables for plotting
+  mutate(id = factor(id),
+         plot_id = as.factor(as.integer(id)),
+         craft = factor(craft))
+```
+
+Number of participants:
+```{r}
+length(unique(data.exp3.agent$id))
+```
+
+#### Participant data
+Participants were asked: “What factors influenced how you decided to respond? Do you have any questions or comments regarding the experiment?”
+```{r}
+participants.exp3.agent = read_csv(paste0(data_dir, 'experiment3_agent/participants.csv'),
+                                   show_col_types = F) %>%
+  filter(id %in% data.exp3.agent$id) %>%
+  mutate(id = factor(id)) %>%
+  left_join(data.exp3.agent %>%
+              distinct(id, plot_id),
+            by = 'id')
+
+participants.exp3.agent %>%
+  select(plot_id, feedback) %>% 
+  datatable()
+```
+
+### Object condition
+
+#### Trial info
+```{r}
+info.exp3.object = read_csv(paste0(data_dir, 'experiment3_object/trial_info.csv'),
+                            show_col_types = F) %>%
+  pivot_longer(cols = !trial,
+               names_to = c('.value', 'color'),
+               names_pattern = '(.+)_(.)') %>%
+  mutate(num = low + high)
+```
+
+#### Response data
+```{r}
+data.exp3.object = read_csv(paste0(data_dir, 'experiment3_object/trials.csv'),
+                            show_col_types = F)
+
+# filter participants who accidentally responded more than once
+rm_ids_object = data.exp3.object %>%
+  group_by(id) %>%
+  summarise(n = n()/length(unique(info.exp3.object$trial))) %>%
+  filter(n > 1) %>%
+  .$id
+
+data.exp3.object = data.exp3.object %>%
+  filter(!(id %in% rm_ids_object)) %>%
+  pivot_longer(cols = c(b, y),
+               names_to = 'color',
+               values_to = 'resp') %>%
+  # ignore exclusion trial and practice trials
+  filter(!(trial %in% c("X1", 1, 2))) %>%
+  # merge with trial info
+  merge(info.exp3.object,
+        by = c('trial', 'color')) %>%
+  # factor variables for plotting
+  mutate(id = factor(id),
+         plot_id = as.factor(as.integer(id)),
+         color = factor(color))
+```
+
+Number of participants:
+```{r}
+length(unique(data.exp3.object$id))
+```
+
+#### Participant data
+Participants were asked: “What factors influenced how you decided to respond? Do you have any questions or comments regarding the experiment?”
+```{r}
+participants.exp3.object = read_csv(paste0(data_dir, 'experiment3_object/participants.csv'),
+                                    show_col_types = F) %>%
+  filter(id %in% data.exp3.object$id) %>%
+  mutate(id = factor(id)) %>%
+  left_join(data.exp3.object %>%
+              distinct(id, plot_id),
+            by = 'id')
+
+participants.exp3.object %>%
+  select(plot_id, feedback) %>% 
+  datatable()
+```
+
+### Demographics
+```{r}
+participants.exp3.agent %>%
+  rbind(participants.exp3.object) %>%
+  print_demographics()
+```
+
+## Models
+
+### Agent condition
+
+#### Parameter search
+```{r}
+rmse.exp3.agent_full = data.frame()
+for (p_low in seq(0, 1, by = 0.05)) {
+  for (p_high in seq(p_low, 1, by = 0.05)) {
+    rmse.exp3.agent_full = update_search_two(3, 'agent', p_low, p_high)
+  }
+}
+colnames(rmse.exp3.agent_full) = c('p_low', 'p_high', 'rmse')
+
+# get optimal values
+p.exp3.agent_low = rmse.exp3.agent_full[which.min(rmse.exp3.agent_full$rmse),]$p_low
+p.exp3.agent_high = rmse.exp3.agent_full[which.min(rmse.exp3.agent_full$rmse),]$p_high
+
+# create plot
+plot_rmse.exp3.agent = plot_search_two(3, 'agent')
+
+# update response data
+data.exp3.agent = data.exp3.agent %>%
+  mutate(prob = 1 - (1 - p.exp3.agent_low)^low * (1 - p.exp3.agent_high)^high,
+         contributor = ifelse(availability == 'high', p.exp3.agent_high, p.exp3.agent_low),
+         CP = (1 - contributor) * (1 - prob))
+```
+
+#### Overall models
+
+Fitting baseline model:
+```{r}
+fit.exp3.agent_baseline = brm(
+  formula = resp ~ 1 + (1 | id),
+  data = data.exp3.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp3.agent_baseline")
+```
+
+Fitting CP (multiplicative) model:
+```{r}
+fit.exp3.agent_cp = brm(
+  formula = resp ~ 1 + CP + (1 + CP | id),
+  data = data.exp3.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp3.agent_cp")
+```
+
+Fitting CRM (additive):
+```{r}
+fit.exp3.agent_crm = brm(
+  formula = resp ~ 1 + contributor + prob + (1 + contributor + prob | id),
+  data = data.exp3.agent,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp3.agent_crm")
+```
+
+Comparing models with leave-one-out cross-validation:
+```{r}
+fit.exp3.agent_baseline = add_criterion(
+  fit.exp3.agent_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.agent_baseline")
+
+fit.exp3.agent_cp = add_criterion(
+  fit.exp3.agent_cp,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.agent_cp")
+
+fit.exp3.agent_crm = add_criterion(
+  fit.exp3.agent_crm,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.agent_crm")
+
+loo_compare(fit.exp3.agent_baseline,
+            fit.exp3.agent_crm,
+            fit.exp3.agent_cp)
+```
+
+#### Individual models
+```{r eval = F}
+fit.exp3.agent_baseline_individual = brm(
+  formula = resp ~ 1,
+  data = data.exp3.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp3.agent_baseline_individual")
+
+fit.exp3.agent_cp_individual = brm(
+  formula = resp ~ 1 + CP,
+  data = data.exp3.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp3.agent_cp_individual")
+
+fit.exp3.agent_crm_individual = brm(
+  formula = resp ~ 1 + contributor + prob,
+  data = data.exp3.agent %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp3.agent_crm_individual")
+
+# update model fits for each participant 
+data.exp3.agent_model_fits = data.exp3.agent %>% 
+  group_by(plot_id) %>% 
+  nest() %>% 
+  ungroup() %>% 
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp3.agent_baseline_individual,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_cp = map(.x = data,
+                      .f = ~ update(fit.exp3.agent_cp_individual,
+                                    newdata = .x,
+                                    seed = 1)),
+         fit_crm = map(.x = data,
+                       .f = ~ update(fit.exp3.agent_crm_individual,
+                                     newdata = .x,
+                                     seed = 1))) %>%
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_cp = map(.x = fit_cp,
+                      .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm = map(.x = fit_crm,
+                       .f = ~ add_criterion(.x, criterion = "loo")),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           cp = fit_cp,
+                                           crm = fit_crm),
+                                 .f = ~ loo_compare(..1, ..2, ..3)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2", "..3"),
+                             labels = c("baseline",
+                                        "cp",
+                                        "crm")))
+
+save(list = c("data.exp3.agent_model_fits"),
+     file = paste0(data_dir, 'experiment3_agent/model-fits.RData'))
+```
+
+```{r}
+load(file = paste0(data_dir, 'experiment3_agent/model-fits.RData'))
+
+data.exp3.agent_model_fits %>% 
+  count(best_model) %>%
+  arrange(desc(n))
+```
+
+### Object condition
+
+#### Parameter search
+```{r}
+rmse.exp3.object_full = data.frame()
+for (p_low in seq(0, 1, by = 0.05)) {
+  for (p_high in seq(p_low, 1, by = 0.05)) {
+    rmse.exp3.object_full = update_search_two(3, 'object', p_low, p_high)
+  }
+}
+colnames(rmse.exp3.object_full) = c('p_low', 'p_high', 'rmse')
+
+# get optimal values
+p.exp3.object_low = rmse.exp3.object_full[which.min(rmse.exp3.object_full$rmse),]$p_low
+p.exp3.object_high = rmse.exp3.object_full[which.min(rmse.exp3.object_full$rmse),]$p_high
+
+# create plot
+plot_rmse.exp3.object = plot_search_two(3, 'object')
+
+# update response data
+data.exp3.object = data.exp3.object %>%
+  mutate(prob = 1 - (1 - p.exp3.object_low)^low * (1 - p.exp3.object_high)^high,
+         contributor = ifelse(availability == 'high', p.exp3.object_high, p.exp3.object_low),
+         CP = (1 - contributor) * (1 - prob))
+```
+
+#### Overall models
+
+Fitting baseline model:
+```{r}
+fit.exp3.object_baseline = brm(
+  formula = resp ~ 1 + (1 | id),
+  data = data.exp3.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp3.object_baseline")
+```
+
+Fitting CP (multiplicative) model:
+```{r}
+fit.exp3.object_cp = brm(
+  formula = resp ~ 1 + CP + (1 + CP | id),
+  data = data.exp3.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp3.object_cp")
+```
+
+Fitting CRM (additive):
+```{r}
+fit.exp3.object_crm = brm(
+  formula = resp ~ 1 + contributor + prob + (1 + contributor + prob | id),
+  data = data.exp3.object,
+  iter = 8000,
+  seed = 1,
+  file = "cache/fit.exp3.object_crm")
+```
+
+Comparing models with leave-one-out cross-validation:
+```{r}
+fit.exp3.object_baseline = add_criterion(
+  fit.exp3.object_baseline,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.object_baseline")
+
+fit.exp3.object_cp = add_criterion(
+  fit.exp3.object_cp,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.object_cp")
+
+fit.exp3.object_crm = add_criterion(
+  fit.exp3.object_crm,
+  criterion = "loo",
+  reloo = T,
+  file = "cache/fit.exp3.object_crm")
+
+loo_compare(fit.exp3.object_baseline,
+            fit.exp3.object_crm,
+            fit.exp3.object_cp)
+```
+
+#### Individual models
+```{r eval = F}
+fit.exp3.object_baseline_individual = brm(
+  formula = resp ~ 1,
+  data = data.exp3.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp3.object_baseline_individual")
+
+fit.exp3.object_cp_individual = brm(
+  formula = resp ~ 1 + CP,
+  data = data.exp3.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp3.object_cp_individual")
+
+fit.exp3.object_crm_individual = brm(
+  formula = resp ~ 1 + contributor + prob,
+  data = data.exp3.object %>% 
+    filter(plot_id == 1),
+  seed = 1,
+  file = "cache/fit.exp3.object_crm_individual")
+
+# update model fits for each participant 
+data.exp3.object_model_fits = data.exp3.object %>% 
+  group_by(plot_id) %>% 
+  nest() %>% 
+  ungroup() %>% 
+  mutate(fit_baseline = map(.x = data,
+                            .f = ~ update(fit.exp3.object_baseline_individual,
+                                          newdata = .x,
+                                          seed = 1)),
+         fit_cp = map(.x = data,
+                      .f = ~ update(fit.exp3.object_cp_individual,
+                                    newdata = .x,
+                                    seed = 1)),
+         fit_crm = map(.x = data,
+                       .f = ~ update(fit.exp3.object_crm_individual,
+                                     newdata = .x,
+                                     seed = 1))) %>%
+  mutate(fit_baseline = map(.x = fit_baseline,
+                            .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_cp = map(.x = fit_cp,
+                      .f = ~ add_criterion(.x, criterion = "loo")),
+         fit_crm = map(.x = fit_crm,
+                       .f = ~ add_criterion(.x, criterion = "loo")),
+         model_comparison = pmap(.l = list(baseline = fit_baseline,
+                                           cp = fit_cp,
+                                           crm = fit_crm),
+                                 .f = ~ loo_compare(..1, ..2, ..3)),
+         best_model = map_chr(.x = model_comparison,
+                              .f = ~ rownames(.) %>% 
+                                .[1]),
+         best_model = factor(best_model,
+                             levels = c("..1", "..2", "..3"),
+                             labels = c("baseline",
+                                        "cp",
+                                        "crm")))
+
+save(list = c("data.exp3.object_model_fits"),
+     file = paste0(data_dir, 'experiment3_object/model-fits.RData'))
+```
+
+```{r}
+load(file = paste0(data_dir, 'experiment3_object/model-fits.RData'))
+
+data.exp3.object_model_fits %>% 
+  count(best_model) %>%
+  arrange(desc(n))
+```
+
+
+## Plots
+
+### Parameter search
+```{r fig.width = 9, fig.height = 4}
+plot_rmse.exp3.agent + plot_spacer() + plot_rmse.exp3.object +
+  plot_annotation(tag_levels = 'A') +
+  plot_layout(widths = c(4, 1, 4)) &
+  theme(plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment3/p_search.pdf'), width = 9, height = 4)
+```
+
+### Setting up data
+```{r}
+data.exp3.agent = data.exp3.agent %>%
+  cbind(fit.exp3.agent_baseline %>%
+          fitted(newdata = data.exp3.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_baseline = Estimate) %>%
+          select(pred_baseline)) %>%
+  cbind(fit.exp3.agent_cp %>%
+          fitted(newdata = data.exp3.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_cp = Estimate) %>%
+          select(pred_cp)) %>%
+  cbind(fit.exp3.agent_crm %>%
+          fitted(newdata = data.exp3.agent,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm = Estimate) %>%
+          select(pred_crm))
+
+data.exp3.agent_means = data.exp3.agent %>%
+  group_by(trial, craft) %>%
+  summarise(resp_mean = mean(resp),
+            resp_low = smean.cl.boot(resp)[2],
+            resp_high = smean.cl.boot(resp)[3]) %>%
+  merge(info.exp3.agent, by = c('trial', 'craft')) %>%
+  left_join(data.exp3.agent %>%
+              distinct(trial, craft, pred_baseline,
+                       pred_cp, pred_crm),
+            by = c('trial', 'craft'))
+```
+
+```{r}
+data.exp3.object = data.exp3.object  %>%
+  cbind(fit.exp3.object_baseline %>%
+          fitted(newdata = data.exp3.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_baseline = Estimate) %>%
+          select(pred_baseline)) %>%
+  cbind(fit.exp3.object_cp %>%
+          fitted(newdata = data.exp3.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_cp = Estimate) %>%
+          select(pred_cp)) %>%
+  cbind(fit.exp3.object_crm %>%
+          fitted(newdata = data.exp3.object ,
+                 re_formula = NA) %>%
+          as_tibble() %>%
+          mutate(pred_crm = Estimate) %>%
+          select(pred_crm))
+
+data.exp3.object_means = data.exp3.object  %>%
+  group_by(trial, color) %>%
+  summarise(resp_mean = mean(resp),
+            resp_low = smean.cl.boot(resp)[2],
+            resp_high = smean.cl.boot(resp)[3]) %>%
+  merge(info.exp3.object, by = c('trial', 'color')) %>%
+  left_join(data.exp3.object  %>%
+              distinct(trial, color, pred_baseline,
+                       pred_cp, pred_crm),
+            by = c('trial', 'color'))
+```
+
+```{r}
+labels.exp3 = info.exp3.agent %>% 
+  distinct(low, high, availability) %>% 
+  arrange(low + high, high, desc(availability)) %>%
+  mutate(condition = NA,
+         index = 1:n(),
+         index_prob = rep(1:(n()/2), each = 2),
+         grob = pmap(.l = list(availability, low, high),
+                     .f = ~ readPNG(paste0(figures_dir, 'experiment3/combos/',
+                                          ..1, ..2, ..3, '.png'))))
+
+model_labels.exp3 = c('baseline' = 'Contribution model',
+                      'cp' = 'CP model',
+                      'crm' = 'CRM-based model')
+
+model_order.exp3 = c('baseline', 'cp', 'crm')
+```
+
+### Scatter plots
+```{r fig.width = 8, fig.height = 8}
+scatter.exp3.agent_cp = make_scatter(
+  data.exp3.agent_means, 'cp', 'CP model', c(40, 100))
+scatter.exp3.agent_crm = make_scatter(
+  data.exp3.agent_means, 'crm', 'CRM-based model', c(40, 100))
+
+scatter.exp3.object_cp = make_scatter(
+  data.exp3.object_means, 'cp', 'CP model', c(0, 100))
+scatter.exp3.object_crm = make_scatter(
+  data.exp3.object_means, 'crm', 'CRM-based model', c(0, 100))
+
+scatter.exp3.agent_cp + scatter.exp3.agent_crm +
+  scatter.exp3.object_cp + scatter.exp3.object_crm +
+  plot_layout(ncol = 2) +
+  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment3/scatter.pdf'), width = 8, height = 8)
+```
+
+### Bar plots
+```{r}
+make_bar.exp3 = function(data, fill, cutoff) {
+  g = ggplot(data = data,
+             mapping = aes(x = index,
+                           y = resp)) +
+    stat_summary(fun = "mean",
+                 geom = "bar",
+                 color = 'black',
+                 fill = fill,
+                 width = 0.8) +
+    stat_summary(fun.data = "mean_cl_boot",
+                 geom = "linerange",
+                 size = 1) +
+    stat_summary(mapping = aes(y = pred,
+                               fill = model,
+                               shape = model,
+                               size = model),
+                 fun = 'mean',
+                 geom = 'point',
+                 color = 'black',
+                 position = position_dodge(width = 0.5)) +
+    facet_wrap(~ index, scales = 'free_x', nrow = 2) +
+    geom_rect(aes(xmin = index - 0.5, xmax = index + 0.5,
+                  ymin = 0, ymax = cutoff),
+              fill = 'white') +
+    geom_custom(data = labels.exp3,
+                mapping = aes(data = grob,
+                              x = -Inf, y = cutoff - 10),
+                grob_fun = function(x) rasterGrob(x,
+                                                  interpolate = T,
+                                                  vjust = 0,
+                                                  hjust = 0)) +
+    theme(text = element_text(size = 14),
+          legend.position = c(0.5, 0.95),
+          legend.direction = 'horizontal',
+          legend.title = element_blank(),
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.line.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.major.y = element_line(),
+          panel.spacing.y = unit(0.8, "cm"),
+          plot.margin = margin(t = 0.2, l = 0.2, r = 0.2, b = 0.8, unit = "cm")) +
+    scale_fill_manual(values = c('baseline' = 'black',
+                                 'cp' = 'gray50',
+                                 'crm' = 'white'),
+                      labels = model_labels.exp3,
+                      name = 'model') +
+    scale_size_manual(values = c('baseline' = 2,
+                                 'cp' = 2,
+                                 'crm' = 2.5),
+                      labels = model_labels.exp3,
+                      name = 'model') +
+    scale_shape_manual(values = c('baseline' = 21,  # circle
+                                  'cp' = 24, # triangle
+                                  'crm' = 23), # diamond
+                       labels = model_labels.exp3,
+                       name = 'model') +
+    scale_y_continuous(name = 'responsibility judgment',
+                       breaks = seq(0, 100, 25),
+                       expand = expansion(mult = 0.01)) +
+    coord_cartesian(clip = 'off', ylim = c(cutoff, 100))
+  
+  return (g)
+}
+```
+
+```{r fig.width = 10, fig.height = 12}
+barplot.exp3.agent = make_bar.exp3(
+  data = data.exp3.agent %>%
+    left_join(labels.exp3 %>%
+                select(low, high, availability, index, index_prob),
+              by = c('low', 'high', 'availability')) %>%
+    pivot_longer(cols = starts_with('pred'),
+                 names_to = 'model',
+                 values_to = 'pred') %>%
+    mutate(model = factor(sub('^pred_', '', model),
+                          levels = model_order.exp3)),
+  fill = 'gray90',
+  cutoff = 20
+)
+
+barplot.exp3.object = make_bar.exp3(
+  data = data.exp3.object %>%
+    left_join(labels.exp3 %>%
+                select(low, high, availability, index, index_prob),
+              by = c('low', 'high', 'availability')) %>%
+    pivot_longer(cols = starts_with('pred'),
+                 names_to = 'model',
+                 values_to = 'pred') %>%
+    mutate(model = factor(sub('^pred_', '', model),
+                          levels = model_order.exp3)),
+  fill = 'gray75',
+  cutoff = 20
+)
+
+barplot.exp3.agent + barplot.exp3.object +
+  plot_layout(ncol = 1) +
+  plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment3/bar.pdf'), width = 10, height = 12)
+```
+
+# Session info
+```{r}
+sessionInfo()
+```
+
