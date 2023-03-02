@@ -150,7 +150,6 @@ update_search_one = function(exp, condition, p) {
 }
 ```
 
-
 ```{r}
 plot_search_one = function(exp, condition) {
   data_rmse =  get(paste0('rmse.exp', exp, '.', condition, '_uniform'))
@@ -172,11 +171,9 @@ plot_search_one = function(exp, condition) {
     scale_y_continuous(name = 'RMSE',
                        limits = c(0, 5.5),
                        breaks = seq(0, 5))
-  
   return(g)
 }
 ```
-
 
 ### Varying probabilities
 ```{r}
@@ -235,7 +232,6 @@ plot_search_two = function(exp, condition) {
                      breaks = seq(0, 1, by = 0.2)) +
     scale_y_discrete(name = 'high availability p',
                      breaks = seq(0, 1, by = 0.2))
-  
   return(g)
 }
 ```
@@ -243,7 +239,7 @@ plot_search_two = function(exp, condition) {
 
 ## Make scatter plot
 ```{r}
-make_scatter = function(data_means, model_name, xlabel, limits) {
+make_scatter = function(data_means, model_name, xlabel, breaks) {
   col_name = paste('pred_', model_name, sep = '')
   
   if (model_name == 'baseline') {
@@ -270,16 +266,26 @@ make_scatter = function(data_means, model_name, xlabel, limits) {
     annotate('text',
              label = sprintf('r = %s\nRMSE = %.2f', r, rmse),
              hjust = 0,   # left align
-             x = limits[1], y = limits[2]) +
+             x = breaks[1], y = breaks[length(breaks)] - 2) +
     scale_x_continuous(name = xlabel,
-                       limits = limits) +
+                       breaks = breaks,
+                       limits = c(breaks[1], breaks[length(breaks)])) +
     scale_y_continuous(name = 'responsibility judgment',
-                       limits = limits,
-                       expand = expansion(0.1))
+                       breaks = breaks,
+                       limits = c(breaks[1], breaks[length(breaks)])) +
+    coord_fixed(ratio = 1)
 
   return(g)
 }
 ```
+
+```{r}
+agent_icon = readPNG(paste0(figures_dir, 'icons/agent.png')) %>%
+  rasterGrob(interpolate = T)
+object_icon = readPNG(paste0(figures_dir, 'icons/object.png')) %>%
+  rasterGrob(interpolate = T)
+```
+
 
 # Experiment 1
 
@@ -660,13 +666,13 @@ data.exp1.object_model_fits %>%
 ## Plots
 
 ### Parameter search
-```{r fig.width = 9, fit.height = 4}
+```{r fig.width = 9, fig.height = 4}
 plot_rmse.exp1.agent + plot_spacer() + plot_rmse.exp1.object +
   plot_annotation(tag_levels = 'A') +
   plot_layout(widths = c(4, 1, 4)) &
   theme(plot.tag = element_text(size = 24))
 
-ggsave(paste0(figures_dir, '/experiment1/p_search.pdf'), width = 9, height = 4)
+# ggsave(paste0(figures_dir, '/experiment1/p_search.pdf'), width = 9, height = 4)
 ```
 
 ### Setting up data
@@ -723,57 +729,114 @@ data.exp1.object_means = data.exp1.object  %>%
 ```
 
 ```{r}
-data.exp1 = data.exp1.agent %>%
-  mutate(condition = 'agent') %>%
-  bind_rows(data.exp1.object %>%
-              mutate(condition = 'object'))
+model_labels.exp1 = c('baseline' = 'Contribution model',
+                      'crm' = 'CRM')
+
+model_order.exp1 = c('baseline', 'crm')
+```
+
+### Scatter plots
+```{r fig.width = 8, fig.height = 4}
+scatter.exp1.agent_crm = make_scatter(
+  data.exp1.agent_means, 'crm', 'CRM', seq(0, 100, 20))
+scatter.exp1.object_crm = make_scatter(
+  data.exp1.object_means, 'crm', 'CRM', seq(0, 100, 20))
+
+scatter.exp1.agent_crm + inset_element(agent_icon, 0.85, 0.01, 1, 0.25) +
+  scatter.exp1.object_crm + inset_element(object_icon, 0.85, 0.01, 1, 0.15) +
+  plot_layout(ncol = 2) +
+  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.tag = element_text(size = 24))
+
+# ggsave(paste0(figures_dir, 'experiment1/scatter.pdf'), width = 8, height = 4)
 ```
 
 ### Bar plot
+```{r}
+barplot.exp1 = function(data, fill) {
+  g = ggplot(data = data,
+             mapping = aes(x = num,
+                           y = resp)) +
+    stat_summary(fun = "mean",
+                 geom = "bar",
+                 color = 'black',
+                 fill = fill,
+                 width = 0.8) +
+    stat_summary(fun.data = "mean_cl_boot",
+                 geom = "linerange",
+                 size = 1) +
+    stat_summary(mapping = aes(y = pred,
+                               fill = model,
+                               shape = model,
+                               size = model),
+                 fun = 'mean',
+                 geom = 'point',
+                 color = 'black',
+                 position = position_dodge(width = 0.5)) +
+    theme(text = element_text(size = 16),
+          legend.position = 'bottom',
+          legend.direction = 'horizontal',
+          legend.title = element_blank(),
+          axis.title.x = element_blank(),
+          #axis.text.x = element_blank(),
+          axis.line.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_blank(),
+          panel.grid.major.y = element_line()) +
+    scale_fill_manual(values = c('baseline' = 'black',
+                                 'crm' = 'white'),
+                      labels = model_labels.exp1,
+                      name = 'model') +
+    scale_size_manual(values = c('baseline' = 2.5,
+                                 'crm' = 3),
+                      labels = model_labels.exp1,
+                      name = 'model') +
+    scale_shape_manual(values = c('baseline' = 21,  # circle
+                                  'crm' = 23), # diamond
+                       labels = model_labels.exp1,
+                       name = 'model') +
+    scale_y_continuous(name = 'responsibility judgment',
+                       breaks = seq(0, 100, 20),
+                       expand = expansion(mult = 0.01)) +
+    coord_cartesian(clip = 'off', ylim = c(0, 100))
+  
+  return(g)
+}
+```
 
-```{r fig.width = 8, fig.height = 3}
-num_labels = c('0 replacements', '1 replacement', '2 replacements', '3 replacements')
-names(num_labels) = c(0, 1, 2, 3)
+```{r fig.width = 10, fig.height = 4}
+barplot.exp1.agent = barplot.exp1(
+  data = data.exp1.agent %>%
+    pivot_longer(cols = starts_with('pred'),
+                 names_to = 'model',
+                 values_to = 'pred') %>%
+    mutate(model = factor(sub('^pred_', '', model),
+                          levels = model_order.exp1)),
+  fill = 'gray90'
+)
 
-ggplot(data = data.exp1,
-       mapping = aes(x = condition,
-                     y = resp,
-                     fill = condition)) +
-  stat_summary(fun = "mean",
-               geom = "bar",
-               color = 'black',
-               width = 0.8) +
-  stat_summary(fun.data = "mean_cl_boot",
-               geom = "linerange",
-               size = 1) +
-  geom_point(position = position_jitter(width = 0.1, height = 0),
-             shape = 21,
-             alpha = 0.04,
-             size = 0.5,
-             show.legend = F) +
-  stat_summary(mapping = aes(y = pred_crm),
-               fun = 'mean',
-               geom = 'point',
-               size = 2,
-               shape = 21,
-               show.legend = F) +
-  facet_wrap(~ num, nrow = 1,
-             labeller = labeller(num = num_labels)) +
-  scale_fill_manual(values = c('agent' = 'gray90',
-                               'objectect' = 'gray75')) +
-  theme(text = element_text(size = 12),
-        legend.position = 'bottom',
-        legend.direction = 'horizontal',
-        axis.title.x = element_blank(),
-        axis.text.x = element_blank(),
-        axis.line.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        panel.grid.major.y = element_line()) +
-  scale_y_continuous(name = 'responsibility judgment',
-                     limits = c(0, 100),
-                     expand = expansion(mult = 0.05))
+barplot.exp1.object = barplot.exp1(
+  data = data.exp1.object %>%
+    pivot_longer(cols = starts_with('pred'),
+                 names_to = 'model',
+                 values_to = 'pred') %>%
+    mutate(model = factor(sub('^pred_', '', model),
+                          levels = model_order.exp1)),
+  fill = 'gray75'
+)
 
-# ggsave(paste0(figures_dir, 'experiment1/bar.pdf'), width = 8, height = 3)
+barplot.exp1.agent + inset_element(agent_icon, 0.85, 0.8, 1, 0.95,
+                                   align_to = 'full') +
+  barplot.exp1.object + inset_element(object_icon, 0.85, 0.9, 1, 1) +
+  plot_layout(nrow = 1,
+              guides = 'collect') +
+  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
+  theme(plot.tag = element_text(size = 24),
+        legend.position = 'bottom')
+
+# ggsave(paste0(figures_dir, 'experiment1/bar.pdf'), width = 10, height = 4.5)
 ```
 
 
@@ -1193,7 +1256,6 @@ loo_compare(fit.exp2.object_baseline,
             fit.exp2.object_crm_uniform,
             fit.exp2.object_crm_full)
 ```
-
 #### Individual models
 ```{r eval = F}
 fit.exp2.object_baseline_individual = brm(
@@ -1286,7 +1348,6 @@ plot_rmse.exp2.agent_full + plot_spacer() + plot_rmse.exp2.object_full +
 # ggsave(paste0(figures_dir, 'experiment2/p_search_full.pdf'), width = 9, height = 4)
 ```
 
-
 ### Setting up data
 ```{r}
 data.exp2.agent = data.exp2.agent %>%
@@ -1362,7 +1423,7 @@ labels.exp2 = info.exp2.agent %>%
          index = 1:n(),
          grob = map2(.x = low,
                      .y = high,
-                     .f = ~ readPNG(paste0(figures_dir, 'experiment2/combos/',
+                     .f = ~ readPNG(paste0(figures_dir, 'experiment2/sets/',
                                            .x, .y, '.png'))))
 
 model_labels.exp2 = c('baseline' = 'Contribution model',
@@ -1375,19 +1436,22 @@ model_order.exp2 = c('baseline', 'crm_uniform', 'crm_full')
 ### Scatter plots
 ```{r fig.width = 8, fig.height = 8}
 scatter.exp2.agent_uniform = make_scatter(
-  data.exp2.agent_means, 'crm_uniform', 'CRM (uniform)', c(40, 100))
+  data.exp2.agent_means, 'crm_uniform', 'CRM (uniform)', seq(40, 100, 20))
 scatter.exp2.agent_full = make_scatter(
-  data.exp2.agent_means, 'crm_full', 'CRM (full)', c(40, 100))
+  data.exp2.agent_means, 'crm_full', 'CRM (full)', seq(40, 100, 20))
 
 scatter.exp2.object_uniform = make_scatter(
-  data.exp2.object_means, 'crm_uniform', 'CRM (uniform)', c(40, 100))
+  data.exp2.object_means, 'crm_uniform', 'CRM (uniform)', seq(40, 100, 20))
 scatter.exp2.object_full = make_scatter(
-  data.exp2.object_means, 'crm_full', 'CRM (full)', c(40, 100))
+  data.exp2.object_means, 'crm_full', 'CRM (full)', seq(40, 100, 20))
 
-scatter.exp2.agent_uniform + scatter.exp2.agent_full +
-  scatter.exp2.object_uniform + scatter.exp2.object_full +
+scatter.exp2.agent_uniform + inset_element(agent_icon, 0.85, 0.01, 1, 0.25) +
+  scatter.exp2.agent_full + inset_element(agent_icon, 0.85, 0.01, 1, 0.25) +
+  scatter.exp2.object_uniform + inset_element(object_icon, 0.85, 0.01, 1, 0.15) +
+  scatter.exp2.object_full + inset_element(object_icon, 0.85, 0.01, 1, 0.15) +
   plot_layout(ncol = 2) +
-  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
+  plot_annotation(tag_levels = list(c('A', '', '', '',
+                                      'B', '', '', ''))) &
   theme(plot.title = element_text(hjust = 0.5),
         plot.tag = element_text(size = 24))
 
@@ -1396,7 +1460,7 @@ scatter.exp2.agent_uniform + scatter.exp2.agent_full +
 
 ### Bar plots
 ```{r}
-make_bar.exp2 = function(data, fill, cutoff) {
+make_bar.exp2 = function(data, fill) {
   g = ggplot(data = data,
              mapping = aes(x = index,
                            y = resp)) +
@@ -1417,17 +1481,21 @@ make_bar.exp2 = function(data, fill, cutoff) {
                  color = 'black',
                  position = position_dodge(width = 0.5)) +
     geom_rect(aes(xmin = index - 0.5, xmax = index + 0.5,
-                  ymin = 0, ymax = cutoff),
+                  ymin = 0, ymax = 40),
               fill = 'white') +
     geom_custom(data = labels.exp2,
                 mapping = aes(data = grob,
-                              x = index, y = cutoff - 5),
+                              x = index, y = 35),
                 grob_fun = function(x) rasterGrob(x,
                                                   interpolate = T,
                                                   just = c('center',
                                                            'bottom'),
                                                   width = 1/15)) +
-    theme(text = element_text(size = 14),
+    geom_text(aes(label = index,
+                  y = 32),
+              show.legend = F,
+              check_overlap = T) +
+    theme(text = element_text(size = 16),
           legend.position = c(0.5, 0.9),
           legend.direction = 'horizontal',
           legend.title = element_blank(),
@@ -1438,7 +1506,7 @@ make_bar.exp2 = function(data, fill, cutoff) {
           strip.background = element_blank(),
           strip.text = element_blank(),
           panel.grid.major.y = element_line(),
-          plot.margin = margin(t = 0.2, l = 0.2, r = 0.2, b = 0.7, unit = "cm")) +
+          plot.margin = margin(t = 0.2, l = 0.2, r = 0.2, b = 1.1, unit = "cm")) +
     scale_fill_manual(values = c('baseline' = 'black',
                                  'crm_uniform' = 'gray50',
                                  'crm_full' = 'white'),
@@ -1455,15 +1523,14 @@ make_bar.exp2 = function(data, fill, cutoff) {
                        labels = model_labels.exp2,
                        name = 'model') +
     scale_y_continuous(name = 'responsibility judgment',
-                       breaks = seq(0, 100, 25),
-                       expand = expansion(mult = 0.01)) +
-    coord_cartesian(clip = 'off', ylim = c(cutoff, 100))
+                       breaks = seq(40, 100, 20)) +
+    coord_cartesian(clip = 'off', ylim = c(40, 100))
   
   return(g)
 }
 ```
 
-```{r fig.width = 10, fig.height = 7}
+```{r fig.width = 10, fig.height = 8}
 bar.exp2.agent = make_bar.exp2(
   data = data.exp2.agent %>%
     left_join(labels.exp2 %>%
@@ -1474,8 +1541,7 @@ bar.exp2.agent = make_bar.exp2(
                  values_to = 'pred') %>%
     mutate(model = factor(sub('^pred_', '', model),
                           levels = model_order.exp2)),
-  fill = 'gray90',
-  cutoff = 40
+  fill = 'gray90' 
 )
 
 bar.exp2.object = make_bar.exp2(
@@ -1485,19 +1551,19 @@ bar.exp2.object = make_bar.exp2(
               by = c('low', 'high')) %>%
     pivot_longer(cols = starts_with('pred'),
                  names_to = 'model',
-                 values_to = 'pred') %>%
+                 values_to =  'pred') %>%
     mutate(model = factor(sub('^pred_', '', model),
                           levels = model_order.exp2)),
-  fill = 'gray75',
-  cutoff = 40
+  fill = 'gray75'
 )
 
-bar.exp2.agent + bar.exp2.object + 
+bar.exp2.agent + inset_element(agent_icon, 0.85, 0.7, 1, 1) +
+  bar.exp2.object + inset_element(object_icon, 0.85, 0.8, 1, 1) +
   plot_layout(ncol = 1) +
-  plot_annotation(tag_levels = 'A') &
+  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
   theme(plot.tag = element_text(size = 24))
 
-# ggsave(paste0(figures_dir, 'experiment2/bar.pdf'), width = 10, height = 7)
+# ggsave(paste0(figures_dir, 'experiment2/bar.pdf'), width = 10, height = 8)
 ```
 
 # Experiment 3
@@ -1683,7 +1749,7 @@ fit.exp3.agent_cp = brm(
   file = "cache/fit.exp3.agent_cp")
 ```
 
-Fitting CRM (additive):
+Fitting CRM* (additive):
 ```{r}
 fit.exp3.agent_crm = brm(
   formula = resp ~ 1 + contributor + prob + (1 + contributor + prob | id),
@@ -1837,7 +1903,7 @@ fit.exp3.object_cp = brm(
   file = "cache/fit.exp3.object_cp")
 ```
 
-Fitting CRM (additive):
+Fitting CRM* (additive):
 ```{r}
 fit.exp3.object_crm = brm(
   formula = resp ~ 1 + contributor + prob + (1 + contributor + prob | id),
@@ -2031,12 +2097,12 @@ labels.exp3 = info.exp3.agent %>%
          index = 1:n(),
          index_prob = rep(1:(n()/2), each = 2),
          grob = pmap(.l = list(availability, low, high),
-                     .f = ~ readPNG(paste0(figures_dir, 'experiment3/combos/',
+                     .f = ~ readPNG(paste0(figures_dir, 'experiment3/sets/',
                                           ..1, ..2, ..3, '.png'))))
 
 model_labels.exp3 = c('baseline' = 'Contribution model',
                       'cp' = 'CP model',
-                      'crm' = 'CRM-based model')
+                      'crm' = 'CRM*')
 
 model_order.exp3 = c('baseline', 'cp', 'crm')
 ```
@@ -2044,19 +2110,22 @@ model_order.exp3 = c('baseline', 'cp', 'crm')
 ### Scatter plots
 ```{r fig.width = 8, fig.height = 8}
 scatter.exp3.agent_cp = make_scatter(
-  data.exp3.agent_means, 'cp', 'CP model', c(40, 100))
+  data.exp3.agent_means, 'cp', 'CP model', seq(20, 100, 20))
 scatter.exp3.agent_crm = make_scatter(
-  data.exp3.agent_means, 'crm', 'CRM-based model', c(40, 100))
+  data.exp3.agent_means, 'crm', 'CRM*', seq(20, 100, 20))
 
 scatter.exp3.object_cp = make_scatter(
-  data.exp3.object_means, 'cp', 'CP model', c(0, 100))
+  data.exp3.object_means, 'cp', 'CP model', seq(20, 100, 20))
 scatter.exp3.object_crm = make_scatter(
-  data.exp3.object_means, 'crm', 'CRM-based model', c(0, 100))
+  data.exp3.object_means, 'crm', 'CRM*', seq(20, 100, 20))
 
-scatter.exp3.agent_cp + scatter.exp3.agent_crm +
-  scatter.exp3.object_cp + scatter.exp3.object_crm +
+scatter.exp3.agent_cp + inset_element(agent_icon, 0.85, 0.01, 1, 0.25) +
+  scatter.exp3.agent_crm + inset_element(agent_icon, 0.85, 0.01, 1, 0.25) +
+  scatter.exp3.object_cp + inset_element(object_icon, 0.85, 0.01, 1, 0.15) +
+  scatter.exp3.object_crm + inset_element(object_icon, 0.85, 0.01, 1, 0.15) +
   plot_layout(ncol = 2) +
-  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
+  plot_annotation(tag_levels = list(c('A', '', '', '',
+                                      'B', '', '', ''))) &
   theme(plot.title = element_text(hjust = 0.5),
         plot.tag = element_text(size = 24))
 
@@ -2065,7 +2134,7 @@ scatter.exp3.agent_cp + scatter.exp3.agent_crm +
 
 ### Bar plots
 ```{r}
-make_bar.exp3 = function(data, fill, cutoff) {
+make_bar.exp3 = function(data, fill) {
   g = ggplot(data = data,
              mapping = aes(x = index,
                            y = resp)) +
@@ -2087,17 +2156,21 @@ make_bar.exp3 = function(data, fill, cutoff) {
                  position = position_dodge(width = 0.5)) +
     facet_wrap(~ index, scales = 'free_x', nrow = 2) +
     geom_rect(aes(xmin = index - 0.5, xmax = index + 0.5,
-                  ymin = 0, ymax = cutoff),
+                  ymin = -1, ymax = 20),
               fill = 'white') +
     geom_custom(data = labels.exp3,
                 mapping = aes(data = grob,
-                              x = -Inf, y = cutoff - 10),
+                              x = -Inf, y = 9),
                 grob_fun = function(x) rasterGrob(x,
                                                   interpolate = T,
                                                   vjust = 0,
                                                   hjust = 0)) +
-    theme(text = element_text(size = 14),
-          legend.position = c(0.5, 0.95),
+    geom_text(aes(label = index,
+                  y = 6),
+              show.legend = F,
+              check_overlap = T) +
+    theme(text = element_text(size = 16),
+          legend.position = c(0.5, 0.94),
           legend.direction = 'horizontal',
           legend.title = element_blank(),
           axis.title.x = element_blank(),
@@ -2107,8 +2180,8 @@ make_bar.exp3 = function(data, fill, cutoff) {
           strip.background = element_blank(),
           strip.text = element_blank(),
           panel.grid.major.y = element_line(),
-          panel.spacing.y = unit(0.8, "cm"),
-          plot.margin = margin(t = 0.2, l = 0.2, r = 0.2, b = 0.8, unit = "cm")) +
+          panel.spacing.y = unit(1.2, "cm"),
+          plot.margin = margin(t = 0.2, l = 0.2, r = 0.2, b = 1.2, unit = "cm")) +
     scale_fill_manual(values = c('baseline' = 'black',
                                  'cp' = 'gray50',
                                  'crm' = 'white'),
@@ -2125,9 +2198,8 @@ make_bar.exp3 = function(data, fill, cutoff) {
                        labels = model_labels.exp3,
                        name = 'model') +
     scale_y_continuous(name = 'responsibility judgment',
-                       breaks = seq(0, 100, 25),
-                       expand = expansion(mult = 0.01)) +
-    coord_cartesian(clip = 'off', ylim = c(cutoff, 100))
+                       breaks = seq(20, 100, 20)) +
+    coord_cartesian(clip = 'off', ylim = c(20, 100))
   
   return (g)
 }
@@ -2144,8 +2216,7 @@ barplot.exp3.agent = make_bar.exp3(
                  values_to = 'pred') %>%
     mutate(model = factor(sub('^pred_', '', model),
                           levels = model_order.exp3)),
-  fill = 'gray90',
-  cutoff = 20
+  fill = 'gray90'
 )
 
 barplot.exp3.object = make_bar.exp3(
@@ -2158,13 +2229,13 @@ barplot.exp3.object = make_bar.exp3(
                  values_to = 'pred') %>%
     mutate(model = factor(sub('^pred_', '', model),
                           levels = model_order.exp3)),
-  fill = 'gray75',
-  cutoff = 20
+  fill = 'gray75'
 )
 
-barplot.exp3.agent + barplot.exp3.object +
+barplot.exp3.agent + inset_element(agent_icon, 0.9, 0.85, 1, 1, align_to = 'full') +
+  barplot.exp3.object + inset_element(object_icon, 0.9, 0.9, 1, 1) +
   plot_layout(ncol = 1) +
-  plot_annotation(tag_levels = 'A') &
+  plot_annotation(tag_levels = list(c('A', '', 'B', ''))) &
   theme(plot.tag = element_text(size = 24))
 
 # ggsave(paste0(figures_dir, 'experiment3/bar.pdf'), width = 10, height = 12)
