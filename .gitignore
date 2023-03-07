@@ -7,3 +7,5 @@
 
 # Miscellaneous
 .DS_Store
+*.exps
+*.config
