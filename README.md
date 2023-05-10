@@ -1,10 +1,10 @@
 # If not me, then who? Responsibility and replacement
 
-This repository contains the experiments, data, analyses, and figures for the paper "If not me, then who? Responsibility and replacement," by Sarah A. Wu and Tobias Gerstenberg (submitted).
+This repository contains the experiments, data, analyses, and figures for the paper "[If not me, then who? Responsibility and replacement](https://psyarxiv.com/m2rcj/)" by Sarah A. Wu and Tobias Gerstenberg (under review).
 
 __Contents__:
 - [Introduction](#introduction)
-- [Repository structure](#repository-struture)
+- [Repository structure](#repository-structure)
 
 ## Introduction
 
@@ -37,19 +37,19 @@ A short video on an earlier version of this work can be found [here](https://www
     └── ...
 ```
 
-- `analysis/` contains all the code for analyzing data and generating figures, written in R
+- `analysis` contains all the code for analyzing data and generating figures, written in R
   (view a rendered file [here](https://cicl-stanford.github.io/responsibility_replacement/)).
-- `data/` contains anonymized data from all experiments. For each experiment:
+- `data` contains anonymized data from all experiments. For each experiment:
   - `trial_info.csv` is a description of the stimuli, also listed in the Appendices.
   - `trials.csv` contains the response data (i.e. responsibilty judgments).
   - `participants.csv` contains demographic information and post-experiment
     feedback/comments from participants.
   - `model-fits.RData` contains the best models fit to each individual participant.
-- `docs/` contains all the experiment code. You can preview the experiments below:
+- `docs` contains all the experiment code. You can preview the experiments below:
     - Experiment 1 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment1_agent/),
       [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment1_object/)
     - Experiment 2 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment2_agent/),
       [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment2_object/)
     - Experiment 3 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment3_agent/),
       [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment3_object/)
-- `figures/` contains all the figures from the paper (generated using the script in `analysis/`).
+- `figures` contains all the figures from the paper (generated using the script in `analysis`).
