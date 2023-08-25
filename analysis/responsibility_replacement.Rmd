@@ -20,6 +20,7 @@ library(ggstatsplot)   # extension of ggplot2insta
 library(lme4)          # for mixed effects models 
 library(DT)            # for datatable() function 
 library(brms)          # for Bayesian regression models
+library(extraDistr)    # for halfnormal distribution
 library(Metrics)       # for RMSE
 library(Hmisc)         # for bootstrapped confidence intervals
 library(xtable)        # for converting to LaTex tables
@@ -488,6 +489,8 @@ loo_compare(fit.exp1.agent_baseline,
 
 #### Individual models
 ```{r eval = F}
+prior = c(prior(normal(0, 20), class = 'b', ub = 0))
+
 # initialize the models 
 fit.exp1.agent_baseline_individual = brm(
   formula = resp ~ 1,
@@ -500,6 +503,7 @@ fit.exp1.agent_crm_individual = brm(
   formula = resp ~ 1 + prob,
   data = data.exp1.agent %>% 
     filter(plot_id == 1),
+  prior = prior,
   seed = 1,
   file = "cache/fit.exp1.agent_crm_individual")
 
@@ -607,6 +611,8 @@ loo_compare(fit.exp1.object_baseline,
 
 #### Individual models
 ```{r eval = F}
+prior = c(prior(normal(0, 20), class = 'b', ub = 0))
+
 # initialize the models 
 fit.exp1.object_baseline_individual = brm(
   formula = resp ~ 1,
@@ -619,6 +625,7 @@ fit.exp1.object_crm_individual = brm(
   formula = resp ~ 1 + prob,
   data = data.exp1.object %>% 
     filter(plot_id == 1),
+  prior = prior,
   seed = 1,
   file = "cache/fit.exp1.object_crm_individual")
 
@@ -1086,6 +1093,8 @@ loo_compare(fit.exp2.agent_baseline,
 
 #### Individual models
 ```{r eval = F}
+prior = c(prior(normal(0, 20), class = 'b', ub = 0))
+
 fit.exp2.agent_baseline_individual = brm(
   formula = resp ~ 1,
   data = data.exp2.agent %>% 
@@ -1097,6 +1106,7 @@ fit.exp2.agent_crm_uniform_individual = brm(
   formula = resp ~ 1 + prob_uniform,
   data = data.exp2.agent %>% 
     filter(plot_id == 1),
+  prior = prior,
   seed = 1,
   file = "cache/fit.exp2.agent_crm_uniform_individual")
 
@@ -1104,6 +1114,7 @@ fit.exp2.agent_crm_full_individual = brm(
   formula = resp ~ 1 + prob_full,
   data = data.exp2.agent %>% 
     filter(plot_id == 1),
+  prior = prior,
   seed = 1,
   file = "cache/fit.exp2.agent_crm_full_individual")
 
@@ -1258,6 +1269,8 @@ loo_compare(fit.exp2.object_baseline,
 ```
 #### Individual models
 ```{r eval = F}
+prior = c(prior(normal(0, 20), class = 'b', ub = 0))
+
 fit.exp2.object_baseline_individual = brm(
   formula = resp ~ 1,
   data = data.exp2.object %>% 
@@ -1269,6 +1282,7 @@ fit.exp2.object_crm_uniform_individual = brm(
   formula = resp ~ 1 + prob_uniform,
   data = data.exp2.object %>% 
     filter(plot_id == 1),
+  prior = prior,
   seed = 1,
   file = "cache/fit.exp2.object_crm_uniform_individual")
 
@@ -1276,6 +1290,7 @@ fit.exp2.object_crm_full_individual = brm(
   formula = resp ~ 1 + prob_full,
   data = data.exp2.object %>% 
     filter(plot_id == 1),
+  prior = prior,
   seed = 1,
   file = "cache/fit.exp2.object_crm_full_individual")
 
@@ -1750,7 +1765,7 @@ fit.exp3.agent_cp = brm(
   file = "cache/fit.exp3.agent_cp")
 ```
 
-Fitting CRM* (additive):
+Fitting CRM-based account (additive):
 ```{r}
 fit.exp3.agent_crm = brm(
   formula = resp ~ 1 + contributor + prob + (1 + contributor + prob | id),
@@ -1854,6 +1869,24 @@ load(file = paste0(data_dir, 'experiment3_agent/model-fits.RData'))
 data.exp3.agent_model_fits %>% 
   count(best_model) %>%
   arrange(desc(n))
+
+# count number of positive and negative posteriors on replaceability predictor
+data.exp3.agent_model_fits %>%
+  filter(best_model == 'crm') %>%
+  .$fit_crm %>%
+  sapply(function(x) fixef(x)[['prob', 'Estimate']]) %>%
+  sign() %>%
+  as_tibble() %>%
+  count(value)
+
+# count number of positive and negative posteriors on contributor predictor
+data.exp3.agent_model_fits %>%
+  filter(best_model == 'crm') %>%
+  .$fit_crm %>%
+  sapply(function(x) fixef(x)[['contributor', 'Estimate']]) %>%
+  sign() %>%
+  as_tibble() %>%
+  count(value)
 ```
 
 ### Object condition
@@ -1904,7 +1937,7 @@ fit.exp3.object_cp = brm(
   file = "cache/fit.exp3.object_cp")
 ```
 
-Fitting CRM* (additive):
+Fitting CRM-based model (additive):
 ```{r}
 fit.exp3.object_crm = brm(
   formula = resp ~ 1 + contributor + prob + (1 + contributor + prob | id),
@@ -2008,6 +2041,24 @@ load(file = paste0(data_dir, 'experiment3_object/model-fits.RData'))
 data.exp3.object_model_fits %>% 
   count(best_model) %>%
   arrange(desc(n))
+
+# count number of positive and negative posteriors on replaceability predictor
+data.exp3.object_model_fits %>%
+  filter(best_model == 'crm') %>%
+  .$fit_crm %>%
+  sapply(function(x) fixef(x)[['prob', 'Estimate']]) %>%
+  sign() %>%
+  as_tibble() %>%
+  count(value)
+
+# count number of positive and negative posteriors on contributor predictor
+data.exp3.object_model_fits %>%
+  filter(best_model == 'crm') %>%
+  .$fit_crm %>%
+  sapply(function(x) fixef(x)[['contributor', 'Estimate']]) %>%
+  sign() %>%
+  as_tibble() %>%
+  count(value)
 ```
 
 
@@ -2103,7 +2154,7 @@ labels.exp3 = info.exp3.agent %>%
 
 model_labels.exp3 = c('baseline' = 'Contribution model',
                       'cp' = 'CP model',
-                      'crm' = 'CRM*')
+                      'crm' = 'CRM-based model')
 
 model_order.exp3 = c('baseline', 'cp', 'crm')
 ```
@@ -2113,12 +2164,12 @@ model_order.exp3 = c('baseline', 'cp', 'crm')
 scatter.exp3.agent_cp = make_scatter(
   data.exp3.agent_means, 'cp', 'CP model', seq(20, 100, 20))
 scatter.exp3.agent_crm = make_scatter(
-  data.exp3.agent_means, 'crm', 'CRM*', seq(20, 100, 20))
+  data.exp3.agent_means, 'crm', 'CRM-based model', seq(20, 100, 20))
 
 scatter.exp3.object_cp = make_scatter(
   data.exp3.object_means, 'cp', 'CP model', seq(20, 100, 20))
 scatter.exp3.object_crm = make_scatter(
-  data.exp3.object_means, 'crm', 'CRM*', seq(20, 100, 20))
+  data.exp3.object_means, 'crm', 'CRM-based model', seq(20, 100, 20))
 
 scatter.exp3.agent_cp + inset_element(agent_icon, 0.85, 0.01, 1, 0.25) +
   scatter.exp3.agent_crm + inset_element(agent_icon, 0.85, 0.01, 1, 0.25) +
