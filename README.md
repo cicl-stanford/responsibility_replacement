@@ -1,11 +1,14 @@
 # If not me, then who? Responsibility and replacement
 
-This repository contains the experiments, data, analyses, and figures for the paper "[If not me, then who? Responsibility and replacement](https://psyarxiv.com/m2rcj/)" by Sarah A. Wu and Tobias Gerstenberg (under review).
+This repository contains the experiments, data, analyses, and figures for the paper
+"[If not me, then who? Responsibility and replacement](https://doi.org/10.1016/j.cognition.2023.105646)"
+by Sarah A. Wu and Tobias Gerstenberg (2023, _Cognition_).
 
 __Contents__:
 - [Introduction](#introduction)
 - [Experiments](#experiments)
 - [Repository structure](#repository-structure)
+- [CRediT author statement](#credit-author-statement)
 
 ## Introduction
 
@@ -57,3 +60,8 @@ Try out the experiments for yourself!
   - `model-fits.RData` contains the best models fit to each individual participant.
 - `docs` contains all the experiment code.
 - `figures` contains all the figures from the paper (generated using the script in `analysis`).
+
+## CRediT author statement
+
+- **Sarah A. Wu**: Conceptualization, Methodology, Software, Validation, Formal analysis, Investigation, Data curation, Writing – original draft, Writing – review & editing, Visualization, Funding acquisition.
+- **Tobias Gerstenberg**: Conceptualization, Methodology, Software, Validation, Formal analysis, Resources, Writing – review & editing, Visualization, Supervision, Project administration, Funding acquisition.
