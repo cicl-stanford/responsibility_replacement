@@ -6,7 +6,7 @@ by Sarah A. Wu and Tobias Gerstenberg (2023, _Cognition_).
 
 __Contents__:
 - [Introduction](#introduction)
-- [Experiments](#experiments)
+- [Preregistrations](#preregistrations)
 - [Repository structure](#repository-structure)
 - [CRediT author statement](#credit-author-statement)
 
@@ -24,15 +24,12 @@ How do people hold others responsible? Responsibility judgments are affected not
 
 A short video on an earlier version of this work can be found [here](https://www.youtube.com/watch?v=_jhCXqqtmdA) (from CogSci 2021).
 
-## Experiments
+## Preregistrations
 
-Try out the experiments for yourself!
-- Experiment 1 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment1_agent/),
-  [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment1_object/)
-- Experiment 2 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment2_agent/),
-  [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment2_object/)
-- Experiment 3 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment3_agent/),
-  [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment3_object/)
+Preregistrations for all experiments are available on the Open Science Framework (OSF):
+- Experiment 1 - [Agent condition](https://osf.io/jnuay), [Object condition](https://osf.io/w2eh6)
+- Experiment 2 - [Agent condition](https://osf.io/j7vw6), [Object condition](https://osf.io/bdf95)
+- Experiment 3 - [Agent condition](https://osf.io/gxjs6), [Object condition](https://osf.io/6svnt)
 
 ## Repository structure
 
@@ -58,7 +55,13 @@ Try out the experiments for yourself!
   - `participants.csv` contains demographic information and post-experiment
     feedback/comments from participants.
   - `model-fits.RData` contains the best models fit to each individual participant.
-- `docs` contains all the experiment code.
+- `docs` contains all the experiment code. You can preview the experiments below:
+  - Experiment 1 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment1_agent/),
+  [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment1_object/)
+  - Experiment 2 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment2_agent/),
+  [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment2_object/)
+  - Experiment 3 - [Agent condition](https://cicl-stanford.github.io/responsibility_replacement/experiment3_agent/),
+  [Object condition](https://cicl-stanford.github.io/responsibility_replacement/experiment3_object/)
 - `figures` contains all the figures from the paper (generated using the script in `analysis`).
 
 ## CRediT author statement
