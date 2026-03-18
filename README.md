@@ -2,7 +2,7 @@
 
 This repository contains the experiments, data, analyses, and figures for the paper
 "[If not me, then who? Responsibility and replacement](https://doi.org/10.1016/j.cognition.2023.105646)"
-by Sarah A. Wu and Tobias Gerstenberg (2023, _Cognition_).
+by Sarah A. Wu and Tobias Gerstenberg (2024, _Cognition_).
 
 __Contents__:
 - [Introduction](#introduction)
